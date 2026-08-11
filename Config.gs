@@ -1,6 +1,6 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.8.0',
+  VERSION: '2.9.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
@@ -100,13 +100,15 @@ const FIELD_LABELS = Object.freeze({
   ,subtotal_amount: 'Tạm tính', tax_rate: 'Thuế suất (%)', tax_amount: 'Tiền thuế'
 });
 
-const PROJECT_TASK_DESIGN_EXTENSION_SCHEMA = Object.freeze([
-  { sheet_name: 'project_tasks', purpose: 'Phan cong cong viec chung theo du an va phong ban', field_name: 'assignee_user_id', data_type: 'text', required: false, description: 'Nguoi truc tiep thuc hien; phai thuoc phong ban cua cong viec', foreign_key: 'users.user_id' },
-  { sheet_name: 'project_tasks', purpose: 'Phan cong cong viec chung theo du an va phong ban', field_name: 'assigned_at', data_type: 'datetime', required: false, description: 'Thoi diem giao cong viec cho nguoi thuc hien', foreign_key: '' },
-  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'template_type', data_type: 'text', required: false, description: 'Phan loai mau thiet ke: new hoac old', foreign_key: '' },
-  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'revision_count', data_type: 'integer', required: false, description: 'So lan chinh sua option sau khi nop Sale/khach hang', foreign_key: '' },
-  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'kpi_days', data_type: 'integer', required: false, description: 'So ngay KPI do Leader Thiet ke quy dinh', foreign_key: '' },
-  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'extended_days', data_type: 'integer', required: false, description: 'So ngay gia han them cho deadline', foreign_key: '' }
+const DESIGN_ORDER_EXTENSION_SCHEMA = Object.freeze([
+  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'parent_design_order_id', data_type: 'text', required: false, description: 'Order cha de hien thi cay phan cong', foreign_key: 'design_orders.design_order_id' },
+  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'work_name', data_type: 'text', required: false, description: 'Ten noi bo cua phan cong; order goc duoc tu sinh theo du an', foreign_key: '' },
+  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'progress_percent', data_type: 'percent', required: false, description: 'Tien do do nguoi thiet ke khai bao, tu 0 den 100', foreign_key: '' },
+  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'result_note', data_type: 'text', required: false, description: 'Ket qua va ghi chu ban giao file thiet ke', foreign_key: '' }
+]);
+
+const PROJECT_DESIGN_EXTENSION_SCHEMA = Object.freeze([
+  { sheet_name: 'projects', purpose: 'Thong tin chung cua du an duoc cac phong ban tham chieu', field_name: 'design_template_type', data_type: 'text', required: false, description: 'Loai mau thiet ke cua du an: new hoac old', foreign_key: '' }
 ]);
 
 const INVOICE_EXTENSION_SCHEMA = Object.freeze([

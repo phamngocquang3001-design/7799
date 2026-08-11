@@ -24,7 +24,8 @@ function setupSystem_() {
   try {
     ensureAuthInfrastructure_(true);
     ensureSheetColumns_('invoices', ['subtotal_amount','tax_rate','tax_amount']);
-    ensureSheetColumns_('project_tasks', PROJECT_TASK_DESIGN_EXTENSION_SCHEMA.map(function (field) { return field.field_name; }));
+    ensureSheetColumns_('design_orders', DESIGN_ORDER_EXTENSION_SCHEMA.map(function (field) { return field.field_name; }));
+    ensureSheetColumns_('projects', PROJECT_DESIGN_EXTENSION_SCHEMA.map(function (field) { return field.field_name; }));
     const spreadsheet = db_();
     if (spreadsheet.getSpreadsheetTimeZone() !== APP.TIMEZONE) spreadsheet.setSpreadsheetTimeZone(APP.TIMEZONE);
     ensureContractsSheet_();
@@ -36,7 +37,7 @@ function setupSystem_() {
     ensureContractPermissions_(true);
     ensureLeadExtensionPermissions_(true);
     ensureCustomerHubPermissions_(true);
-    ensureProjectTaskPermissions_(true);
+    ensureDepartmentOrderPermissions_(true);
     ensureDesignDepartmentLeader_();
     seedTaskTemplates_(true);
     deduplicateTaskTemplates_();
@@ -432,12 +433,13 @@ function ensureCustomerHubPermissions_(lockHeld) {
   }; }));
 }
 
-function ensureProjectTaskPermissions_(lockHeld) {
+function ensureDepartmentOrderPermissions_(lockHeld) {
   const existing = listRows_('role_permissions', {}, APP.MAX_LIST_ROWS).rows;
   const keys = {};
   existing.forEach(function (row) { keys[row.role_code + '|' + row.resource_code] = true; });
   const definitions = [
-    ['sales','project_tasks',true,true,false,false,'own']
+    ['sales','design_orders',true,true,false,false,'own'],
+    ['operator','design_orders',true,true,true,false,'department']
   ].filter(function (item) { return !keys[item[0] + '|' + item[1]]; });
   if (!definitions.length) return;
   const ids = nextIds_('permission', 'Q', definitions.length, lockHeld);
@@ -532,8 +534,10 @@ function getDataDictionary_() {
     Object.keys(LEAD_EXTENSION_SCHEMAS).forEach(function (entity) { parsed[entity] = leadExtensionSchema_(entity); });
     parsed.invoices = parsed.invoices || [];
     INVOICE_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.invoices.some(function (item) { return item.field_name === field.field_name; })) parsed.invoices.push(field); });
-    parsed.project_tasks = parsed.project_tasks || [];
-    PROJECT_TASK_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.project_tasks.some(function (item) { return item.field_name === field.field_name; })) parsed.project_tasks.push(field); });
+    parsed.design_orders = parsed.design_orders || [];
+    DESIGN_ORDER_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.design_orders.some(function (item) { return item.field_name === field.field_name; })) parsed.design_orders.push(field); });
+    parsed.projects = parsed.projects || [];
+    PROJECT_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.projects.some(function (item) { return item.field_name === field.field_name; })) parsed.projects.push(field); });
     return parsed;
   }
   const sheet = sheet_('data_dictionary');
@@ -551,8 +555,10 @@ function getDataDictionary_() {
   Object.keys(LEAD_EXTENSION_SCHEMAS).forEach(function (entity) { result[entity] = leadExtensionSchema_(entity); });
   result.invoices = result.invoices || [];
   INVOICE_EXTENSION_SCHEMA.forEach(function (field) { if (!result.invoices.some(function (item) { return item.field_name === field.field_name; })) result.invoices.push(field); });
-  result.project_tasks = result.project_tasks || [];
-  PROJECT_TASK_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!result.project_tasks.some(function (item) { return item.field_name === field.field_name; })) result.project_tasks.push(field); });
+  result.design_orders = result.design_orders || [];
+  DESIGN_ORDER_EXTENSION_SCHEMA.forEach(function (field) { if (!result.design_orders.some(function (item) { return item.field_name === field.field_name; })) result.design_orders.push(field); });
+  result.projects = result.projects || [];
+  PROJECT_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!result.projects.some(function (item) { return item.field_name === field.field_name; })) result.projects.push(field); });
   const json = JSON.stringify(result);
   if (json.length < 95000) cache.put('data_dictionary', json, APP.CACHE_SECONDS);
   return result;
@@ -735,6 +741,9 @@ function applyDataScopeFilters_(entity, filters, user) {
   if (rule.scope === 'own' && entity === 'project_tasks') {
     scoped.project_id = listRows_('projects', { sales_id: user.user_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; });
   }
+  if (rule.scope === 'own' && entity === 'design_orders') {
+    scoped.project_id = listRows_('projects', { sales_id: user.user_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; });
+  }
   if (rule.scope === 'department') {
     if (entity === 'project_tasks') scoped.department_id = user.department_id;
     if (entity === 'task_templates') scoped.department_id = user.department_id;
@@ -743,6 +752,10 @@ function applyDataScopeFilters_(entity, filters, user) {
     }
     if (entity === 'task_resources') {
       scoped.task_id = listRows_('project_tasks', { department_id: user.department_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.task_id; });
+    }
+    if (entity === 'design_orders') {
+      if (user.department_id !== 'design') scoped.design_order_id = [];
+      else if (!isDepartmentLeader_('design', user)) scoped.designer_id = user.user_id;
     }
   }
   return scoped;
@@ -805,6 +818,10 @@ function assertRecordScope_(entity, record, user) {
     const project = getRowById_('projects', record.project_id);
     visible = !!project && String(project.sales_id || '') === String(user.user_id);
   }
+  if (rule.scope === 'own' && entity === 'design_orders') {
+    const project = getRowById_('projects', record.project_id);
+    visible = !!project && String(project.sales_id || '') === String(user.user_id);
+  }
   if (rule.scope === 'department' && (entity === 'project_tasks' || entity === 'task_templates')) visible = String(record.department_id || '') === String(user.department_id);
   if (rule.scope === 'department' && entity === 'projects') {
     visible = listRows_('project_departments', { project_id: record.project_id, department_id: user.department_id }, 1).total > 0;
@@ -812,6 +829,9 @@ function assertRecordScope_(entity, record, user) {
   if (rule.scope === 'department' && entity === 'task_resources') {
     const task = getRowById_('project_tasks', record.task_id);
     visible = !!task && String(task.department_id || '') === String(user.department_id);
+  }
+  if (rule.scope === 'department' && entity === 'design_orders') {
+    visible = user.department_id === 'design' && (isDepartmentLeader_('design', user) || String(record.designer_id || '') === String(user.user_id));
   }
   if (!visible) throw appError_('ACCESS_DENIED_SCOPE', 'Bản ghi nằm ngoài phạm vi dữ liệu được cấp');
 }
@@ -846,6 +866,13 @@ function prepareScopedMutation_(entity, data, user, creating) {
   if (rule.scope === 'own' && entity === 'project_tasks') {
     const project = getRowById_('projects', scoped.project_id);
     if (!project || String(project.sales_id || '') !== String(user.user_id)) throw appError_('ACCESS_DENIED_SCOPE', 'Du an nam ngoai pham vi Sale phu trach');
+  }
+  if (rule.scope === 'own' && entity === 'design_orders') {
+    const project = getRowById_('projects', scoped.project_id);
+    if (!project || String(project.sales_id || '') !== String(user.user_id)) throw appError_('ACCESS_DENIED_SCOPE', 'Du an nam ngoai pham vi Sale phu trach');
+  }
+  if (rule.scope === 'department' && entity === 'design_orders' && user.department_id !== 'design') {
+    throw appError_('ACCESS_DENIED_SCOPE', 'Chi phong Thiet ke duoc thao tac bang design_orders');
   }
   if (rule.scope === 'department') {
     if (entity === 'project_tasks' || entity === 'task_templates') scoped.department_id = user.department_id;
@@ -952,11 +979,51 @@ function prepareMutation_(entity, data, user, creating) {
     }
   }
   if (entity === 'users') data = prepareUserCredentials_(data, creating);
+  if (entity === 'design_orders') {
+    const currentOrder = creating ? null : getRowById_('design_orders', data.design_order_id);
+    const effectiveOrder = Object.assign({}, currentOrder || {}, data);
+    const parentOrder = effectiveOrder.parent_design_order_id ? getRowById_('design_orders', effectiveOrder.parent_design_order_id) : null;
+    const privilegedOrderUser = ['admin','manager'].indexOf(user.role_code) >= 0;
+    const designLeaderId = departmentLeaderId_('design');
+    if (creating) {
+      if (parentOrder) {
+        if (!privilegedOrderUser && String(user.user_id) !== String(designLeaderId)) throw appError_('DESIGN_LEADER_ONLY', 'Chi Leader Thiet ke duoc tao phan cong con');
+        data.project_id = parentOrder.project_id;
+      } else if (user.role_code !== 'sales' && !privilegedOrderUser) {
+        throw appError_('DESIGN_ROOT_SALES_ONLY', 'Chi Sale, quan ly hoac admin duoc tao order Thiet ke goc');
+      }
+      const designProject = getRowById_('projects', data.project_id);
+      if (!designProject) throw appError_('PROJECT_REQUIRED', 'Khong tim thay du an cua order Thiet ke');
+      const proposalDocuments = listRows_('project_documents', { project_id: data.project_id, document_type: 'proposal' }, APP.MAX_LIST_ROWS).rows.sort(function (a,b) { return dateValue_(b.updated_at || b.created_at)-dateValue_(a.updated_at || a.created_at); });
+      data.ordered_by = user.user_id;
+      data.ordered_at = data.ordered_at || new Date();
+      data.assigned_at = data.assigned_at || new Date();
+      data.designer_id = parentOrder ? data.designer_id : designLeaderId;
+      data.work_name = data.work_name || (parentOrder ? 'Phan cong thiet ke' : 'Order thiet ke - ' + (designProject.project_name || designProject.project_id));
+      data.design_type = designProject.service_type || '';
+      data.template_type = designProject.design_template_type || '';
+      data.proposal_input_url = proposalDocuments[0] ? proposalDocuments[0].file_url : '';
+      data.progress_status = data.progress_status || 'pending';
+      data.progress_percent = Number(data.progress_percent || 0);
+      data.revision_count = Number(data.revision_count || 0);
+      data.kpi_days = Number(data.kpi_days || 0);
+      data.extended_days = Number(data.extended_days || 0);
+      if (!designLeaderId) throw appError_('DESIGN_LEADER_REQUIRED', 'Phong Thiet ke chua duoc cau hinh Leader');
+      const designAssignee = getRowById_('users', data.designer_id);
+      if (!designAssignee || designAssignee.user_status !== 'active' || designAssignee.department_id !== 'design') throw appError_('INVALID_DESIGN_ASSIGNEE', 'Nguoi thiet ke phai la nhan su dang hoat dong cua phong Thiet ke');
+    } else if (!privilegedOrderUser && String(user.user_id) !== String(designLeaderId)) {
+      if (String(currentOrder.designer_id || '') !== String(user.user_id)) throw appError_('DESIGN_ORDER_ASSIGNEE_ONLY', 'Ban khong phai nguoi thiet ke cua order nay');
+      const allowedOrderFields = ['design_order_id','progress_status','progress_percent','revision_count','final_design_url','result_note','note'];
+      Object.keys(data).forEach(function (field) { if (allowedOrderFields.indexOf(field) < 0) delete data[field]; });
+    }
+    if (Number(data.progress_percent || 0) < 0 || Number(data.progress_percent || 0) > 100) throw appError_('INVALID_PROGRESS', 'Tien do phai tu 0 den 100');
+    ['revision_count','kpi_days','extended_days'].forEach(function (field) { if (!isBlank_(data[field]) && Number(data[field]) < 0) throw appError_('INVALID_DESIGN_NUMBER', field + ' khong duoc am'); });
+  }
   if (entity === 'project_tasks') {
     const currentTask = creating ? null : getRowById_('project_tasks', data.task_id);
     const effective = Object.assign({}, currentTask || {}, data);
     const parentTask = effective.parent_task_id ? getRowById_('project_tasks', effective.parent_task_id) : null;
-    if (effective.department_id === 'design' || (parentTask && parentTask.department_id === 'design')) {
+    if (false && (effective.department_id === 'design' || (parentTask && parentTask.department_id === 'design'))) {
       const privileged = ['admin','manager'].indexOf(user.role_code) >= 0;
       const designLeaderId = departmentLeaderId_('design');
       if (creating) {
