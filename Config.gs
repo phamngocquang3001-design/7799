@@ -1,6 +1,6 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.10.0',
+  VERSION: '2.11.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,

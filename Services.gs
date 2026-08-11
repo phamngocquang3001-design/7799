@@ -1109,11 +1109,37 @@ function ensureLeadOpportunityForMutation_(leadId, user) {
 }
 
 function afterMutation_(entity, result) {
+  if (entity === 'design_orders' && result.record && result.record.design_order_id) {
+    const synchronizedOrder = syncDesignOrderProgress_(result.record.design_order_id);
+    if (synchronizedOrder && !synchronizedOrder.deleted_at) result.record = synchronizedOrder;
+  }
   if (entity === 'payments' && result.record.invoice_id) syncInvoiceTotals_(result.record.invoice_id);
   if (entity === 'invoice_items' && result.record.invoice_id) syncInvoiceFinancials_(result.record.invoice_id);
   if (entity === 'invoices' && result.record.invoice_id) result.record = syncInvoiceFinancials_(result.record.invoice_id);
   if (entity === 'users' && result.record.user_status !== 'active') revokeUserSessions_(result.record.user_id);
   return result;
+}
+
+function syncDesignOrderProgress_(designOrderId, visited) {
+  if (!designOrderId) return null;
+  visited = visited || {};
+  if (visited[designOrderId]) return getRowById_('design_orders', designOrderId);
+  visited[designOrderId] = true;
+  let order = getRowById_('design_orders', designOrderId);
+  if (!order) return null;
+  const children = listRows_('design_orders', { parent_design_order_id: designOrderId }, APP.MAX_LIST_ROWS).rows;
+  if (children.length && !order.deleted_at) {
+    const average = Math.round(children.reduce(function (sum, child) {
+      return sum + Math.max(0, Math.min(100, Number(child.progress_percent || 0)));
+    }, 0) / children.length * 100) / 100;
+    if (Number(order.progress_percent || 0) !== average) {
+      order = saveRow_('design_orders', { design_order_id: designOrderId, progress_percent: average }).record;
+    }
+  } else if (!order.deleted_at && !order.designer_id && Number(order.progress_percent || 0) !== 0) {
+    order = saveRow_('design_orders', { design_order_id: designOrderId, progress_percent: 0 }).record;
+  }
+  if (order.parent_design_order_id) syncDesignOrderProgress_(order.parent_design_order_id, visited);
+  return getRowById_('design_orders', designOrderId);
 }
 
 function syncInvoiceFinancials_(invoiceId) {
