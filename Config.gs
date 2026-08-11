@@ -1,6 +1,6 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.13.0',
+  VERSION: '2.14.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
@@ -30,6 +30,9 @@ const PERMISSION_MODULES = Object.freeze([
   ['production_plans','Kế hoạch sản xuất','Sản xuất'], ['production_materials','Nguyên vật liệu tổng','Sản xuất'],
   ['production_accessories','Checklist phụ kiện','Sản xuất'], ['production_paints','Sơn','Sản xuất'],
   ['production_letters','Checklist chữ','Sản xuất'], ['production_prints','Checklist PP','Sản xuất'],
+  ['warehouse_tasks','Công việc Kho','Kho'], ['logistics_tasks','Công việc Hậu cần','Hậu cần'],
+  ['flower_project_plans','Sổ kế hoạch Hoa','Hoa'], ['flower_tasks','Công việc Hoa','Hoa'],
+  ['flower_tool_orders','Order CCDC Hoa','Hoa'], ['flower_handoffs','Bàn giao Hoa / Hậu cần','Hoa'], ['flower_materials','Vật tư thi công Hoa','Hoa'],
   ['project_tasks','Công việc','Vận hành'], ['task_assignments','Phân công nhân sự','Vận hành'], ['task_resources','Vật tư','Vận hành'],
   ['task_vehicles','Phương tiện','Vận hành'], ['project_handoffs','Bàn giao','Vận hành'], ['task_templates','Mẫu công việc','Vận hành'],
   ['contracts','Hợp đồng','Tài chính'], ['invoices','Hóa đơn','Tài chính'], ['invoice_items','Chi tiết hóa đơn','Tài chính'], ['payment_plans','Kế hoạch thu','Tài chính'], ['payments','Thanh toán','Tài chính'],
@@ -63,6 +66,13 @@ const ENTITY_CONFIG = Object.freeze({
   production_paints: { pk: 'production_paint_id', entity: 'production_paint', prefix: 'SON', label: 'Sơn' },
   production_letters: { pk: 'production_letter_id', entity: 'production_letter', prefix: 'CHU', label: 'Checklist chữ' },
   production_prints: { pk: 'production_print_id', entity: 'production_print', prefix: 'PP', label: 'Checklist PP' },
+  warehouse_tasks: { pk: 'warehouse_task_id', entity: 'warehouse_task', prefix: 'KHO', label: 'Công việc Kho' },
+  logistics_tasks: { pk: 'logistics_task_id', entity: 'logistics_task', prefix: 'HC', label: 'Công việc Hậu cần' },
+  flower_project_plans: { pk: 'flower_plan_id', entity: 'flower_project_plan', prefix: 'KHHOA', label: 'Sổ kế hoạch Hoa' },
+  flower_tasks: { pk: 'flower_task_id', entity: 'flower_task', prefix: 'CVHOA', label: 'Công việc Hoa' },
+  flower_tool_orders: { pk: 'flower_tool_order_id', entity: 'flower_tool_order', prefix: 'CCDC', label: 'Order CCDC Hoa' },
+  flower_handoffs: { pk: 'flower_handoff_id', entity: 'flower_handoff', prefix: 'BGHOA', label: 'Bàn giao Hoa / Hậu cần' },
+  flower_materials: { pk: 'flower_material_id', entity: 'flower_material', prefix: 'VTHOA', label: 'Vật tư thi công Hoa' },
   project_items: { pk: 'project_item_id', entity: 'project_item', prefix: 'HM', label: 'Hạng mục' },
   project_departments: { pk: 'project_department_id', entity: 'project_department', prefix: 'PBDA', label: 'Phòng ban dự án' },
   task_templates: { pk: 'task_template_id', entity: 'task_template', prefix: 'MCV', label: 'Mẫu công việc' },
@@ -118,7 +128,12 @@ const FIELD_LABELS = Object.freeze({
   checklist_item: 'Nội dung checklist', file_completed: 'Đã hoàn thành file', work_completed: 'Đã hoàn thành',
   material: 'Chất liệu', sheet_quantity: 'Số tấm 1220×2440', product_type: 'Loại sản phẩm',
   demo_paper_1_27_m: 'Demo giấy 1.27m', paper_0_914_m: 'Giấy 0.914m', paper_1_07_m: 'Giấy 1.07m',
-  paper_1_27_m: 'Giấy 1.27m', paper_1_52_m: 'Giấy 1.52m', total_m2: 'Tổng m²', completed: 'Hoàn thành', missing_note: 'Còn thiếu'
+  paper_1_27_m: 'Giấy 1.27m', paper_1_52_m: 'Giấy 1.52m', total_m2: 'Tổng m²', completed: 'Hoàn thành', missing_note: 'Còn thiếu',
+  work_type: 'Loại công việc', responsible_user_id: 'Người phụ trách', personnel_note: 'Nhân sự tham gia', start_time: 'Bắt đầu', end_time: 'Kết thúc',
+  vehicle_type: 'Chủng loại xe', vehicle_quantity: 'Số lượng xe', proposal_deadline: 'Hạn Proposal', flower_status: 'Tình trạng Hoa',
+  flower_designer_id: 'Người thiết kế Hoa', has_fresh_table_flowers: 'Hoa tươi bàn Gallery', has_car_flowers: 'Hoa xe', important_note: 'Lưu ý quan trọng',
+  flower_work_type: 'Loại công việc Hoa', internal_florist_user_id: 'Nhân sự Hoa nội bộ', external_florist_note: 'Nhân sự Hoa ngoài', parttime_note: 'Nhân sự part-time',
+  handoff_date: 'Ngày bàn giao', handoff_item: 'Nội dung bàn giao', actual_additional_quantity: 'Số lượng phát sinh', flower_handoff_id: 'Mã bàn giao Hoa'
 });
 
 const DESIGN_ORDER_EXTENSION_SCHEMA = Object.freeze([
@@ -208,6 +223,63 @@ const PRODUCTION_AUDIT_SCHEMA = Object.freeze([
 function productionSchema_(entity) {
   const purpose = 'Bảng nghiệp vụ riêng của phòng Sản xuất, liên kết dự án và hạng mục thi công';
   return (PRODUCTION_TABLE_SCHEMAS[entity] || []).concat(PRODUCTION_AUDIT_SCHEMA).map(function (field) {
+    return { sheet_name: entity, purpose: purpose, field_name: field[0], data_type: field[1], required: field[2], description: field[3], foreign_key: field[4] };
+  });
+}
+
+const DEPARTMENT_OPERATION_TABLE_SCHEMAS = Object.freeze({
+  warehouse_tasks: [
+    ['warehouse_task_id','text',true,'Mã công việc Kho tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['work_date','date',true,'Ngày thực hiện',''], ['work_type','text',true,'Loại công việc Kho',''], ['work_detail','text',false,'Tên đám hoặc chi tiết công việc',''],
+    ['responsible_user_id','text',false,'Người phụ trách','users.user_id'], ['personnel_note','text',false,'Nhân sự tham gia',''],
+    ['start_time','text',false,'Giờ bắt đầu',''], ['end_time','text',false,'Giờ kết thúc',''], ['work_status','text',false,'Tình trạng công việc',''],
+    ['vehicle_type','text',false,'Chủng loại xe',''], ['vehicle_quantity','decimal',false,'Số lượng xe',''],
+    ['project_item_id','text',false,'Hạng mục thi công','project_items.project_item_id'], ['note','text',false,'Lưu ý','']
+  ],
+  logistics_tasks: [
+    ['logistics_task_id','text',true,'Mã công việc Hậu cần tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['work_date','date',true,'Ngày thực hiện',''], ['work_type','text',true,'Loại công việc Hậu cần',''], ['work_detail','text',false,'Tên đám hoặc chi tiết công việc',''],
+    ['responsible_user_id','text',false,'Người phụ trách','users.user_id'], ['personnel_note','text',false,'Nhân sự tham gia',''],
+    ['start_time','text',false,'Giờ bắt đầu',''], ['end_time','text',false,'Giờ kết thúc',''], ['work_status','text',false,'Tình trạng công việc',''],
+    ['vehicle_type','text',false,'Chủng loại xe',''], ['vehicle_quantity','decimal',false,'Số lượng xe',''],
+    ['project_item_id','text',false,'Hạng mục thi công','project_items.project_item_id'], ['note','text',false,'Lưu ý','']
+  ],
+  flower_project_plans: [
+    ['flower_plan_id','text',true,'Mã kế hoạch Hoa tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['proposal_deadline','datetime',false,'Hạn hoàn thành Proposal',''], ['flower_status','text',false,'Tình trạng kế hoạch Hoa',''],
+    ['flower_designer_id','text',false,'Người thiết kế Hoa','users.user_id'], ['has_fresh_table_flowers','boolean',false,'Có hoa tươi bàn Gallery',''],
+    ['has_car_flowers','boolean',false,'Có hoa xe',''], ['important_note','text',false,'Lưu ý quan trọng','']
+  ],
+  flower_tasks: [
+    ['flower_task_id','text',true,'Mã công việc Hoa tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['work_date','date',true,'Ngày thực hiện',''], ['flower_work_type','text',true,'Loại công việc Hoa',''], ['work_detail','text',false,'Chi tiết công việc',''],
+    ['start_time','text',false,'Giờ bắt đầu',''], ['end_time','text',false,'Giờ kết thúc',''],
+    ['internal_florist_user_id','text',false,'Nhân sự Hoa nội bộ','users.user_id'], ['external_florist_note','text',false,'Nhân sự Hoa ngoài',''],
+    ['parttime_note','text',false,'Nhân sự part-time',''], ['work_status','text',false,'Tình trạng công việc',''], ['note','text',false,'Ghi chú','']
+  ],
+  flower_tool_orders: [
+    ['flower_tool_order_id','text',true,'Mã order CCDC tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['work_date','date',true,'Ngày chuẩn bị',''], ['project_item_id','text',false,'Khu vực / hạng mục','project_items.project_item_id'],
+    ['checklist_item','text',true,'CCDC cần chuẩn bị',''], ['unit','text',false,'Đơn vị',''], ['quantity','decimal',false,'Số lượng',''],
+    ['preparation_status','text',false,'Tình trạng chuẩn bị',''], ['note','text',false,'Ghi chú','']
+  ],
+  flower_handoffs: [
+    ['flower_handoff_id','text',true,'Mã bàn giao tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['handoff_date','date',true,'Ngày bàn giao',''], ['project_item_id','text',false,'Khu vực / hạng mục','project_items.project_item_id'],
+    ['handoff_item','text',true,'Nội dung bàn giao',''], ['unit','text',false,'Đơn vị',''], ['quantity','decimal',false,'Số lượng',''],
+    ['handoff_status','text',false,'Tình trạng bàn giao',''], ['note','text',false,'Ghi chú','']
+  ],
+  flower_materials: [
+    ['flower_material_id','text',true,'Mã vật tư Hoa tự sinh',''], ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['work_date','date',true,'Ngày chuẩn bị',''], ['material_name','text',true,'Tên vật tư thi công',''], ['unit','text',false,'Đơn vị',''],
+    ['planned_quantity','decimal',false,'Số lượng dự kiến',''], ['actual_additional_quantity','decimal',false,'Số lượng phát sinh thực tế',''],
+    ['preparation_status','text',false,'Tình trạng chuẩn bị',''], ['note','text',false,'Ghi chú','']
+  ]
+});
+
+function departmentOperationSchema_(entity) {
+  const purpose = 'Bảng nghiệp vụ riêng theo phòng ban, tự tham chiếu dự án đang mở';
+  return (DEPARTMENT_OPERATION_TABLE_SCHEMAS[entity] || []).concat(PRODUCTION_AUDIT_SCHEMA).map(function (field) {
     return { sheet_name: entity, purpose: purpose, field_name: field[0], data_type: field[1], required: field[2], description: field[3], foreign_key: field[4] };
   });
 }
