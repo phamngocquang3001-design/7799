@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="theme-color" content="#123f3a">
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <section id="loginPage" class="login-page" aria-live="polite">
+    <div class="login-visual">
+      <div class="login-brand"><span>WO</span><div><strong>WeddingOps ERP</strong><small>Wedding operations, one source of truth</small></div></div>
+      <div class="login-message"><span class="eyebrow">HỆ THỐNG ĐIỀU HÀNH NỘI BỘ</span><h1>Đăng nhập để bắt đầu ca làm việc.</h1><p>Mỗi nhân sự chỉ nhìn thấy các phân hệ và dữ liệu đã được quản trị viên cấp quyền.</p></div>
+      <div class="login-security"><b>Phiên đăng nhập 30 ngày</b><span>Mật khẩu được băm có salt; token phiên không lưu dạng thô trong Google Sheets.</span></div>
+    </div>
+    <div class="login-panel">
+      <div class="login-card">
+        <div id="loginLoading" class="login-loading"><div class="spinner"></div><p>Đang kiểm tra phiên đăng nhập...</p></div>
+        <form id="loginForm" class="login-form hidden">
+          <span class="eyebrow">ĐĂNG NHẬP NHÂN SỰ</span><h2>Chào mừng trở lại</h2><p>Dùng tài khoản do quản trị viên cấp.</p>
+          <label>Email<input name="email" type="email" autocomplete="username" required></label>
+          <label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label>
+          <button class="button primary" type="submit">Đăng nhập</button>
+        </form>
+        <form id="setupForm" class="login-form hidden">
+          <span class="eyebrow">KHỞI TẠO LẦN ĐẦU</span><h2>Tạo tài khoản quản trị</h2><p>Chỉ hiển thị khi hệ thống chưa có nhân viên.</p>
+          <label>Họ và tên<input name="full_name" autocomplete="name" required></label>
+          <label>Email quản trị<input name="email" type="email" autocomplete="username" required></label>
+          <label>Mật khẩu<input name="password" type="password" minlength="8" autocomplete="new-password" required><small>Ít nhất 8 ký tự, gồm chữ và số.</small></label>
+          <button class="button primary" type="submit">Khởi tạo & đăng nhập</button>
+        </form>
+        <form id="changePasswordForm" class="login-form hidden">
+          <span class="eyebrow">BẢO MẬT TÀI KHOẢN</span><h2>Đổi mật khẩu tạm</h2><p>Bạn cần đặt mật khẩu riêng trước khi vào hệ thống.</p>
+          <label>Mật khẩu hiện tại<input name="current_password" type="password" autocomplete="current-password" required></label>
+          <label>Mật khẩu mới<input name="new_password" type="password" minlength="8" autocomplete="new-password" required></label>
+          <button class="button primary" type="submit">Đổi mật khẩu & tiếp tục</button>
+        </form>
+        <div id="loginError" class="login-error hidden"></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="app" class="app-shell hidden">
+    <aside class="sidebar" id="sidebar" aria-label="Điều hướng chính">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">WO</div>
+        <div class="brand-copy"><strong>WeddingOps</strong><span>Operations ERP</span></div>
+        <button class="icon-button sidebar-close mobile-only" data-action="close-sidebar" aria-label="Đóng menu">×</button>
+      </div>
+
+      <nav class="nav-list">
+        <p class="nav-caption">Điều hành</p>
+        <button class="nav-item active" data-page="dashboard"><span class="nav-icon">01</span><span>Tổng quan</span></button>
+        <button class="nav-item demo-nav" data-page="demo"><span class="nav-icon">02</span><span>Mô phỏng quy trình</span></button>
+
+        <p class="nav-caption">Kinh doanh & dự án</p>
+        <button class="nav-item" data-page="sales"><span class="nav-icon">03</span><span>Lead & tư vấn</span></button>
+        <button class="nav-item" data-page="customers"><span class="nav-icon">04</span><span>Khách hàng</span></button>
+        <button class="nav-item" data-page="projects"><span class="nav-icon">05</span><span>Dự án / Đám</span></button>
+
+        <p class="nav-caption">Vận hành & tài chính</p>
+        <button class="nav-item" data-page="surveys"><span class="nav-icon">06</span><span>Nhiệm vụ khảo sát</span></button>
+        <button class="nav-item" data-page="tasks"><span class="nav-icon">07</span><span>Công việc</span></button>
+        <button class="nav-item" data-page="resources"><span class="nav-icon">08</span><span>Nguồn lực</span></button>
+        <button class="nav-item" data-page="finance"><span class="nav-icon">09</span><span>Công nợ</span></button>
+
+        <p class="nav-caption">Quản trị</p>
+        <button class="nav-item" data-page="admin"><span class="nav-icon">10</span><span>Hệ thống & danh mục</span></button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="user-avatar" id="userAvatar">Q</div>
+        <div class="user-meta"><strong id="userName">Đang tải...</strong><span id="userRole"></span></div>
+        <span class="online-dot" title="Đang kết nối"></span>
+        <button class="logout-button" id="logoutButton" type="button" title="Đăng xuất" aria-label="Đăng xuất">↪</button>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="utility-bar">
+        <button class="icon-button mobile-only" id="menuButton" aria-label="Mở menu">☰</button>
+        <div class="environment"><span class="environment-dot"></span><strong>Hệ thống thật</strong><span id="appVersion">v2.0.0</span></div>
+        <button class="command-search" id="commandSearch" type="button" title="Tìm trong màn hình hiện tại"><span>⌕</span><span>Tìm nhanh</span><kbd>/</kbd></button>
+        <button class="auth-access-button" id="authAccessButton" type="button" title="Kiểm tra hoặc cấp lại quyền"><span>◉</span><span>Quyền truy cập</span></button>
+        <div class="business-clock"><strong id="businessDate">--/--/----</strong><span id="businessTimezone">Asia/Ho_Chi_Minh</span></div>
+      </header>
+
+      <main class="main">
+        <header class="page-head">
+          <div class="page-heading"><div class="breadcrumb"><span>WeddingOps</span><b>/</b><span id="breadcrumbPage">Tổng quan</span></div><h1 id="pageTitle">Tổng quan</h1><p id="pageSubtitle">Theo dõi toàn bộ quy trình một đám cưới</p></div>
+          <div class="top-actions">
+            <button class="button ghost" id="refreshButton"><span>↻</span> Làm mới</button>
+            <button class="button primary hidden" id="primaryButton">+ Thêm mới</button>
+          </div>
+        </header>
+        <section id="content" class="content" aria-live="polite"><div class="loading-card"><div class="spinner"></div><p>Đang kết nối dữ liệu...</p></div></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <header><div><span class="eyebrow">BIỂU MẪU NGHIỆP VỤ</span><h2 id="modalTitle">Biểu mẫu</h2><p id="modalSubtitle"></p></div><button class="icon-button" data-action="close-modal" aria-label="Đóng">×</button></header>
+      <form id="modalForm"><div id="modalBody" class="form-grid"></div><footer><button type="button" class="button ghost" data-action="close-modal">Hủy</button><button type="submit" class="button primary">Lưu dữ liệu</button></footer></form>
+    </div>
+  </div>
+  <div id="authModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+    <div class="auth-modal-card">
+      <header><div><span class="eyebrow">BẢO MẬT TÀI KHOẢN</span><h2 id="authModalTitle">Quyền truy cập Google</h2><p>Kiểm tra, reset và cấp lại quyền cho chính tài khoản đang dùng.</p></div><button class="icon-button" data-action="close-auth-modal" aria-label="Đóng">×</button></header>
+      <div id="authModalBody" class="auth-modal-body"><div class="spinner"></div><p>Đang kiểm tra quyền...</p></div>
+    </div>
+  </div>
+  <div id="toastHost" class="toast-host" aria-live="assertive"></div>
+  <?!= include('AppJs'); ?>
+</body>
+</html>
