@@ -1,10 +1,10 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.7.0',
+  VERSION: '2.8.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
-  MAX_LIST_ROWS: 500,
+  MAX_LIST_ROWS: 5000,
   DEMO_SHEET: 'demo_scenarios',
   AUDIT_SHEET: 'audit_logs',
   AUTH_SHEET: 'auth_sessions',
@@ -99,6 +99,15 @@ const FIELD_LABELS = Object.freeze({
   lead_note_id: 'Mã ghi chú', note_content: 'Nội dung ghi chú', note_at: 'Thời gian ghi chú', visibility: 'Phạm vi ghi chú'
   ,subtotal_amount: 'Tạm tính', tax_rate: 'Thuế suất (%)', tax_amount: 'Tiền thuế'
 });
+
+const PROJECT_TASK_DESIGN_EXTENSION_SCHEMA = Object.freeze([
+  { sheet_name: 'project_tasks', purpose: 'Phan cong cong viec chung theo du an va phong ban', field_name: 'assignee_user_id', data_type: 'text', required: false, description: 'Nguoi truc tiep thuc hien; phai thuoc phong ban cua cong viec', foreign_key: 'users.user_id' },
+  { sheet_name: 'project_tasks', purpose: 'Phan cong cong viec chung theo du an va phong ban', field_name: 'assigned_at', data_type: 'datetime', required: false, description: 'Thoi diem giao cong viec cho nguoi thuc hien', foreign_key: '' },
+  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'template_type', data_type: 'text', required: false, description: 'Phan loai mau thiet ke: new hoac old', foreign_key: '' },
+  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'revision_count', data_type: 'integer', required: false, description: 'So lan chinh sua option sau khi nop Sale/khach hang', foreign_key: '' },
+  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'kpi_days', data_type: 'integer', required: false, description: 'So ngay KPI do Leader Thiet ke quy dinh', foreign_key: '' },
+  { sheet_name: 'project_tasks', purpose: 'Thuoc tinh rieng cua phong Thiet ke', field_name: 'extended_days', data_type: 'integer', required: false, description: 'So ngay gia han them cho deadline', foreign_key: '' }
+]);
 
 const INVOICE_EXTENSION_SCHEMA = Object.freeze([
   { sheet_name: 'invoices', purpose: 'Hóa đơn chính gắn với từng dự án', field_name: 'subtotal_amount', data_type: 'currency', required: false, description: 'Tổng tiền hàng trước giảm giá, phát sinh và thuế', foreign_key: '' },

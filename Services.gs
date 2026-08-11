@@ -24,6 +24,7 @@ function setupSystem_() {
   try {
     ensureAuthInfrastructure_(true);
     ensureSheetColumns_('invoices', ['subtotal_amount','tax_rate','tax_amount']);
+    ensureSheetColumns_('project_tasks', PROJECT_TASK_DESIGN_EXTENSION_SCHEMA.map(function (field) { return field.field_name; }));
     const spreadsheet = db_();
     if (spreadsheet.getSpreadsheetTimeZone() !== APP.TIMEZONE) spreadsheet.setSpreadsheetTimeZone(APP.TIMEZONE);
     ensureContractsSheet_();
@@ -35,6 +36,8 @@ function setupSystem_() {
     ensureContractPermissions_(true);
     ensureLeadExtensionPermissions_(true);
     ensureCustomerHubPermissions_(true);
+    ensureProjectTaskPermissions_(true);
+    ensureDesignDepartmentLeader_();
     seedTaskTemplates_(true);
     deduplicateTaskTemplates_();
   } finally {
@@ -429,6 +432,44 @@ function ensureCustomerHubPermissions_(lockHeld) {
   }; }));
 }
 
+function ensureProjectTaskPermissions_(lockHeld) {
+  const existing = listRows_('role_permissions', {}, APP.MAX_LIST_ROWS).rows;
+  const keys = {};
+  existing.forEach(function (row) { keys[row.role_code + '|' + row.resource_code] = true; });
+  const definitions = [
+    ['sales','project_tasks',true,true,false,false,'own']
+  ].filter(function (item) { return !keys[item[0] + '|' + item[1]]; });
+  if (!definitions.length) return;
+  const ids = nextIds_('permission', 'Q', definitions.length, lockHeld);
+  appendRowsBatch_('role_permissions', definitions.map(function (item, index) { return {
+    permission_id: ids[index], role_code: item[0], resource_code: item[1], can_view: item[2], can_create: item[3], can_update: item[4], can_delete: item[5], data_scope: item[6], is_active: true
+  }; }));
+}
+
+function ensureDesignDepartmentLeader_() {
+  const department = getRowById_('departments', 'design');
+  if (!department || department.leader_user_id) return department && department.leader_user_id;
+  const leader = listRows_('users', { department_id: 'design', user_status: 'active' }, APP.MAX_LIST_ROWS).rows[0];
+  if (!leader) return '';
+  const located = findRowByValue_('departments', 'department_id', 'design');
+  if (!located) return '';
+  const leaderColumn = located.headers.indexOf('leader_user_id');
+  if (leaderColumn < 0) return '';
+  located.sheet.getRange(located.rowIndex, leaderColumn + 1).setValue(leader.user_id);
+  clearCaches_('departments');
+  return leader.user_id;
+}
+
+function departmentLeaderId_(departmentId) {
+  const department = getRowById_('departments', departmentId);
+  return department ? String(department.leader_user_id || '') : '';
+}
+
+function isDepartmentLeader_(departmentId, user) {
+  user = user || getCurrentUser_();
+  return !!user && String(departmentLeaderId_(departmentId)) === String(user.user_id || '');
+}
+
 function seedTaskTemplates_(lockHeld) {
   if (listRows_('task_templates', {}, 20).total) return;
   const templates = [
@@ -491,6 +532,8 @@ function getDataDictionary_() {
     Object.keys(LEAD_EXTENSION_SCHEMAS).forEach(function (entity) { parsed[entity] = leadExtensionSchema_(entity); });
     parsed.invoices = parsed.invoices || [];
     INVOICE_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.invoices.some(function (item) { return item.field_name === field.field_name; })) parsed.invoices.push(field); });
+    parsed.project_tasks = parsed.project_tasks || [];
+    PROJECT_TASK_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.project_tasks.some(function (item) { return item.field_name === field.field_name; })) parsed.project_tasks.push(field); });
     return parsed;
   }
   const sheet = sheet_('data_dictionary');
@@ -508,6 +551,8 @@ function getDataDictionary_() {
   Object.keys(LEAD_EXTENSION_SCHEMAS).forEach(function (entity) { result[entity] = leadExtensionSchema_(entity); });
   result.invoices = result.invoices || [];
   INVOICE_EXTENSION_SCHEMA.forEach(function (field) { if (!result.invoices.some(function (item) { return item.field_name === field.field_name; })) result.invoices.push(field); });
+  result.project_tasks = result.project_tasks || [];
+  PROJECT_TASK_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!result.project_tasks.some(function (item) { return item.field_name === field.field_name; })) result.project_tasks.push(field); });
   const json = JSON.stringify(result);
   if (json.length < 95000) cache.put('data_dictionary', json, APP.CACHE_SECONDS);
   return result;
@@ -687,6 +732,9 @@ function applyDataScopeFilters_(entity, filters, user) {
     const projectIds = listRows_('projects', { sales_id: user.user_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; });
     scoped.task_id = listRows_('project_tasks', { project_id: projectIds }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.task_id; });
   }
+  if (rule.scope === 'own' && entity === 'project_tasks') {
+    scoped.project_id = listRows_('projects', { sales_id: user.user_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; });
+  }
   if (rule.scope === 'department') {
     if (entity === 'project_tasks') scoped.department_id = user.department_id;
     if (entity === 'task_templates') scoped.department_id = user.department_id;
@@ -753,6 +801,10 @@ function assertRecordScope_(entity, record, user) {
     const project = task && getRowById_('projects', task.project_id);
     visible = !!project && String(project.sales_id || '') === String(user.user_id);
   }
+  if (rule.scope === 'own' && entity === 'project_tasks') {
+    const project = getRowById_('projects', record.project_id);
+    visible = !!project && String(project.sales_id || '') === String(user.user_id);
+  }
   if (rule.scope === 'department' && (entity === 'project_tasks' || entity === 'task_templates')) visible = String(record.department_id || '') === String(user.department_id);
   if (rule.scope === 'department' && entity === 'projects') {
     visible = listRows_('project_departments', { project_id: record.project_id, department_id: user.department_id }, 1).total > 0;
@@ -790,6 +842,10 @@ function prepareScopedMutation_(entity, data, user, creating) {
     const customer = getRowById_('customers', scoped.customer_id);
     const opportunity = customer && getRowById_('sales_opportunities', customer.opportunity_id);
     if (!opportunity || String(opportunity.sales_id || '') !== String(user.user_id)) throw appError_('ACCESS_DENIED_SCOPE', 'Khách hàng nằm ngoài phạm vi được giao');
+  }
+  if (rule.scope === 'own' && entity === 'project_tasks') {
+    const project = getRowById_('projects', scoped.project_id);
+    if (!project || String(project.sales_id || '') !== String(user.user_id)) throw appError_('ACCESS_DENIED_SCOPE', 'Du an nam ngoai pham vi Sale phu trach');
   }
   if (rule.scope === 'department') {
     if (entity === 'project_tasks' || entity === 'task_templates') scoped.department_id = user.department_id;
@@ -897,6 +953,43 @@ function prepareMutation_(entity, data, user, creating) {
   }
   if (entity === 'users') data = prepareUserCredentials_(data, creating);
   if (entity === 'project_tasks') {
+    const currentTask = creating ? null : getRowById_('project_tasks', data.task_id);
+    const effective = Object.assign({}, currentTask || {}, data);
+    const parentTask = effective.parent_task_id ? getRowById_('project_tasks', effective.parent_task_id) : null;
+    if (effective.department_id === 'design' || (parentTask && parentTask.department_id === 'design')) {
+      const privileged = ['admin','manager'].indexOf(user.role_code) >= 0;
+      const designLeaderId = departmentLeaderId_('design');
+      if (creating) {
+        data.department_id = 'design';
+        data.assigned_at = data.assigned_at || new Date();
+        data.task_status = data.task_status || 'assigned';
+        data.progress_percent = Number(data.progress_percent || 0);
+        data.revision_count = Number(data.revision_count || 0);
+        data.kpi_days = Number(data.kpi_days || 0);
+        data.extended_days = Number(data.extended_days || 0);
+        if (!parentTask) {
+          if (user.role_code !== 'sales' && !privileged) throw appError_('DESIGN_ROOT_SALES_ONLY', 'Chi Sale, quan ly hoac admin duoc tao phan cong Thiet ke goc');
+          if (!designLeaderId) throw appError_('DESIGN_LEADER_REQUIRED', 'Phong Thiet ke chua duoc cau hinh Leader');
+          data.assignee_user_id = designLeaderId;
+          data.task_type = 'design_order';
+        } else {
+          if (parentTask.department_id !== 'design') throw appError_('INVALID_PARENT_TASK', 'Phan cong me khong thuoc phong Thiet ke');
+          if (String(parentTask.project_id) !== String(data.project_id || parentTask.project_id)) throw appError_('INVALID_PARENT_TASK', 'Phan cong me khong thuoc cung du an');
+          if (!privileged && String(user.user_id) !== String(designLeaderId)) throw appError_('DESIGN_LEADER_ONLY', 'Chi Leader Thiet ke duoc tao phan cong con');
+          data.project_id = parentTask.project_id;
+          data.project_department_id = parentTask.project_department_id;
+          data.task_group = data.task_group || parentTask.task_group;
+          data.proposal_url = data.proposal_url || parentTask.proposal_url;
+          data.task_type = 'design_execution';
+        }
+        const assignee = getRowById_('users', data.assignee_user_id);
+        if (!assignee || assignee.user_status !== 'active' || assignee.department_id !== 'design') throw appError_('INVALID_DESIGN_ASSIGNEE', 'Nguoi thuc hien phai la nhan su dang hoat dong cua phong Thiet ke');
+      } else if (!privileged && String(user.user_id) !== String(designLeaderId)) {
+        if (String(currentTask.assignee_user_id || '') !== String(user.user_id)) throw appError_('DESIGN_TASK_ASSIGNEE_ONLY', 'Ban khong phai nguoi thuc hien phan cong nay');
+        const allowed = ['task_id','task_status','progress_percent','actual_start_at','actual_end_at','actual_quantity','result_note','result_file_url','production_file_url','is_blocked','blocked_reason','revision_count'];
+        Object.keys(data).forEach(function (field) { if (allowed.indexOf(field) < 0) delete data[field]; });
+      }
+    }
     if (data.project_id && data.department_id && !data.project_department_id) {
       const membership = listRows_('project_departments', { project_id: data.project_id, department_id: data.department_id }, 1).rows[0];
       if (!membership) throw appError_('PROJECT_DEPARTMENT_REQUIRED', 'Phòng ban chưa được thêm vào dự án này. Hãy thêm phòng ban dự án trước khi tạo công việc.');
