@@ -31,6 +31,7 @@ function setupSystem_() {
     if (spreadsheet.getSpreadsheetTimeZone() !== APP.TIMEZONE) spreadsheet.setSpreadsheetTimeZone(APP.TIMEZONE);
     ensureContractsSheet_();
     ensureLeadExtensionSheets_();
+    ensureProductionSheets_();
     ensureDemoSheet_();
     seedMasterData_();
     seedDepartments_();
@@ -39,6 +40,7 @@ function setupSystem_() {
     ensureLeadExtensionPermissions_(true);
     ensureCustomerHubPermissions_(true);
     ensureDepartmentOrderPermissions_(true);
+    ensureProductionPermissions_(true);
     ensureDesignDepartmentLeader_();
     seedTaskTemplates_(true);
     deduplicateTaskTemplates_();
@@ -339,6 +341,47 @@ function ensureContractsSheet_() {
   CacheService.getScriptCache().remove('data_dictionary');
 }
 
+function productionEntities_() {
+  return Object.keys(PRODUCTION_TABLE_SCHEMAS);
+}
+
+function isProductionEntity_(entity) {
+  return productionEntities_().indexOf(entity) >= 0;
+}
+
+function ensureProductionSheets_() {
+  const spreadsheet = db_();
+  let changed = false;
+  productionEntities_().forEach(function (entity) {
+    if (spreadsheet.getSheetByName(entity)) return;
+    const sheet = spreadsheet.insertSheet(entity);
+    const headers = productionSchema_(entity).map(function (field) { return field.field_name; });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setBackground('#123f3a').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.setFrozenRows(1);
+    sheet.setHiddenGridlines(true);
+    CacheService.getScriptCache().remove('headers:' + entity);
+    changed = true;
+  });
+  const dictionarySheet = sheet_('data_dictionary');
+  const dictionaryHeaders = headers_('data_dictionary');
+  const dictionaryValues = dictionarySheet.getLastRow() < 2 ? [] : dictionarySheet.getRange(2, 1, dictionarySheet.getLastRow() - 1, dictionaryHeaders.length).getValues();
+  const existingDictionary = dictionaryValues.map(function (row) { return rowToObject_(dictionaryHeaders, row); });
+  const keys = {};
+  existingDictionary.forEach(function (row) { keys[row.sheet_name + '|' + row.field_name] = true; });
+  const additions = [];
+  productionEntities_().forEach(function (entity) {
+    productionSchema_(entity).forEach(function (field) {
+      if (!keys[field.sheet_name + '|' + field.field_name]) additions.push(field);
+    });
+  });
+  if (additions.length) {
+    appendRowsBatch_('data_dictionary', additions);
+    changed = true;
+  }
+  if (changed) CacheService.getScriptCache().remove('data_dictionary');
+}
+
 function leadExtensionSchema_(entity) {
   return (LEAD_EXTENSION_SCHEMAS[entity] || []).map(function (field) {
     return { sheet_name: entity, purpose: entity === 'lead_attachments' ? 'File và đường dẫn đính kèm của Lead' : 'Lịch sử ghi chú của Lead', field_name: field[0], data_type: field[1], required: field[2], description: field[3], foreign_key: field[4] };
@@ -475,6 +518,22 @@ function ensureDepartmentOrderPermissions_(lockHeld) {
   }; }));
 }
 
+function ensureProductionPermissions_(lockHeld) {
+  const existing = listRows_('role_permissions', {}, APP.MAX_LIST_ROWS).rows;
+  const keys = {};
+  existing.forEach(function (row) { keys[row.role_code + '|' + row.resource_code] = true; });
+  const definitions = [];
+  productionEntities_().forEach(function (entity) {
+    if (!keys['operator|' + entity]) definitions.push(['operator',entity,true,true,true,false,'department']);
+    if (!keys['sales|' + entity]) definitions.push(['sales',entity,true,false,false,false,'own']);
+  });
+  if (!definitions.length) return;
+  const ids = nextIds_('permission', 'Q', definitions.length, lockHeld);
+  appendRowsBatch_('role_permissions', definitions.map(function (item, index) {
+    return { permission_id: ids[index], role_code: item[0], resource_code: item[1], can_view: item[2], can_create: item[3], can_update: item[4], can_delete: item[5], data_scope: item[6], is_active: true };
+  }));
+}
+
 function ensureDesignDepartmentLeader_() {
   const department = getRowById_('departments', 'design');
   if (!department || department.leader_user_id) return department && department.leader_user_id;
@@ -565,6 +624,7 @@ function getDataDictionary_() {
     DESIGN_ORDER_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.design_orders.some(function (item) { return item.field_name === field.field_name; })) parsed.design_orders.push(field); });
     parsed.projects = parsed.projects || [];
     PROJECT_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!parsed.projects.some(function (item) { return item.field_name === field.field_name; })) parsed.projects.push(field); });
+    productionEntities_().forEach(function (entity) { parsed[entity] = productionSchema_(entity); });
     return parsed;
   }
   const sheet = sheet_('data_dictionary');
@@ -586,6 +646,7 @@ function getDataDictionary_() {
   DESIGN_ORDER_EXTENSION_SCHEMA.forEach(function (field) { if (!result.design_orders.some(function (item) { return item.field_name === field.field_name; })) result.design_orders.push(field); });
   result.projects = result.projects || [];
   PROJECT_DESIGN_EXTENSION_SCHEMA.forEach(function (field) { if (!result.projects.some(function (item) { return item.field_name === field.field_name; })) result.projects.push(field); });
+  productionEntities_().forEach(function (entity) { result[entity] = productionSchema_(entity); });
   const json = JSON.stringify(result);
   if (json.length < 95000) cache.put('data_dictionary', json, APP.CACHE_SECONDS);
   return result;
@@ -798,6 +859,9 @@ function applyDataScopeFilters_(entity, filters, user) {
   if (rule.scope === 'own' && entity === 'design_orders') {
     scoped.project_id = listRows_('projects', { sales_id: user.user_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; });
   }
+  if (rule.scope === 'own' && isProductionEntity_(entity)) {
+    scoped.project_id = listRows_('projects', { sales_id: user.user_id }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; });
+  }
   if (rule.scope === 'department') {
     if (entity === 'project_tasks') scoped.department_id = user.department_id;
     if (entity === 'task_templates') scoped.department_id = user.department_id;
@@ -812,6 +876,11 @@ function applyDataScopeFilters_(entity, filters, user) {
       else scoped.design_order_id = listRows_('design_orders', {}, APP.MAX_LIST_ROWS).rows.filter(function (order) {
         return String(order.leader_user_id || '') === String(user.user_id) || String(order.designer_id || '') === String(user.user_id);
       }).map(function (order) { return order.design_order_id; });
+    }
+    if (isProductionEntity_(entity)) {
+      scoped.project_id = user.department_id === 'production'
+        ? listRows_('project_departments', { department_id: 'production' }, APP.MAX_LIST_ROWS).rows.map(function (row) { return row.project_id; })
+        : [];
     }
   }
   return scoped;
@@ -878,6 +947,10 @@ function assertRecordScope_(entity, record, user) {
     const project = getRowById_('projects', record.project_id);
     visible = !!project && String(project.sales_id || '') === String(user.user_id);
   }
+  if (rule.scope === 'own' && isProductionEntity_(entity)) {
+    const project = getRowById_('projects', record.project_id);
+    visible = !!project && String(project.sales_id || '') === String(user.user_id);
+  }
   if (rule.scope === 'department' && (entity === 'project_tasks' || entity === 'task_templates')) visible = String(record.department_id || '') === String(user.department_id);
   if (rule.scope === 'department' && entity === 'projects') {
     visible = listRows_('project_departments', { project_id: record.project_id, department_id: user.department_id }, 1).total > 0;
@@ -888,6 +961,9 @@ function assertRecordScope_(entity, record, user) {
   }
   if (rule.scope === 'department' && entity === 'design_orders') {
     visible = user.department_id === 'design' && (String(record.leader_user_id || '') === String(user.user_id) || String(record.designer_id || '') === String(user.user_id));
+  }
+  if (rule.scope === 'department' && isProductionEntity_(entity)) {
+    visible = user.department_id === 'production' && listRows_('project_departments', { project_id: record.project_id, department_id: 'production' }, 1).total > 0;
   }
   if (!visible) throw appError_('ACCESS_DENIED_SCOPE', 'Bản ghi nằm ngoài phạm vi dữ liệu được cấp');
 }
@@ -927,8 +1003,18 @@ function prepareScopedMutation_(entity, data, user, creating) {
     const project = getRowById_('projects', scoped.project_id);
     if (!project || String(project.sales_id || '') !== String(user.user_id)) throw appError_('ACCESS_DENIED_SCOPE', 'Du an nam ngoai pham vi Sale phu trach');
   }
+  if (rule.scope === 'own' && isProductionEntity_(entity)) {
+    const project = getRowById_('projects', scoped.project_id);
+    if (!project || String(project.sales_id || '') !== String(user.user_id)) throw appError_('ACCESS_DENIED_SCOPE', 'Dự án nằm ngoài phạm vi Sale phụ trách');
+  }
   if (rule.scope === 'department' && entity === 'design_orders' && user.department_id !== 'design') {
     throw appError_('ACCESS_DENIED_SCOPE', 'Chi phong Thiet ke duoc thao tac bang design_orders');
+  }
+  if (rule.scope === 'department' && isProductionEntity_(entity)) {
+    if (user.department_id !== 'production') throw appError_('ACCESS_DENIED_SCOPE', 'Chỉ phòng Sản xuất được thao tác bảng sản xuất');
+    if (!listRows_('project_departments', { project_id: scoped.project_id, department_id: 'production' }, 1).total) {
+      throw appError_('PROJECT_DEPARTMENT_REQUIRED', 'Phòng Sản xuất chưa được thêm vào dự án này');
+    }
   }
   if (rule.scope === 'department') {
     if (entity === 'project_tasks' || entity === 'task_templates') scoped.department_id = user.department_id;
@@ -1140,6 +1226,38 @@ function prepareMutation_(entity, data, user, creating) {
     }
     if (data.task_status === 'done') { data.progress_percent = 100; data.actual_end_at = data.actual_end_at || new Date(); }
     if (data.task_status === 'in_progress' && !data.actual_start_at) data.actual_start_at = new Date();
+  }
+  if (isProductionEntity_(entity)) {
+    const currentProduction = creating ? null : getRowById_(entity, data[ENTITY_CONFIG[entity].pk]);
+    const effectiveProduction = Object.assign({}, currentProduction || {}, data);
+    const productionProject = getRowById_('projects', effectiveProduction.project_id);
+    if (!productionProject) throw appError_('PROJECT_REQUIRED', 'Không tìm thấy dự án của dữ liệu Sản xuất');
+    const productionItem = getRowById_('project_items', effectiveProduction.project_item_id);
+    if (!productionItem || String(productionItem.project_id || '') !== String(productionProject.project_id)) {
+      throw appError_('INVALID_PROJECT_ITEM', 'Hạng mục thi công không thuộc dự án đang mở');
+    }
+    if (creating) {
+      if (entity === 'production_plans') data.production_status = data.production_status || 'planned';
+      if (entity === 'production_materials') data.issue_status = data.issue_status || 'not_issued';
+      if (entity === 'production_accessories' || entity === 'production_paints') data.preparation_status = data.preparation_status || 'pending';
+      if (entity === 'production_letters') {
+        if (isBlank_(data.file_completed)) data.file_completed = false;
+        if (isBlank_(data.work_completed)) data.work_completed = false;
+      }
+      if (entity === 'production_prints') {
+        data.production_status = data.production_status || 'pending';
+        if (isBlank_(data.completed)) data.completed = false;
+      }
+    }
+    if (entity === 'production_prints') {
+      data.total_m2 = Math.round((
+        Number(effectiveProduction.demo_paper_1_27_m || 0) * 1.27 +
+        Number(effectiveProduction.paper_0_914_m || 0) * 0.914 +
+        Number(effectiveProduction.paper_1_07_m || 0) * 1.07 +
+        Number(effectiveProduction.paper_1_27_m || 0) * 1.27 +
+        Number(effectiveProduction.paper_1_52_m || 0) * 1.52
+      ) * 100) / 100;
+    }
   }
   if (entity === 'invoice_items' && isBlank_(data.amount)) data.amount = Number(data.quantity || 0) * Number(data.unit_price || 0);
   return data;

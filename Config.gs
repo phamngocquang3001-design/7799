@@ -1,6 +1,6 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.12.0',
+  VERSION: '2.13.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
@@ -27,6 +27,9 @@ const PERMISSION_MODULES = Object.freeze([
   ['customers','Khách hàng','Khách hàng'], ['customer_contacts','Người liên hệ','Khách hàng'],
   ['projects','Dự án / Đám','Dự án'], ['project_milestones','Mốc dự án','Dự án'], ['project_documents','Tài liệu dự án','Dự án'],
   ['design_orders','Order thiết kế','Dự án'], ['project_items','Hạng mục','Dự án'], ['project_departments','Phòng ban dự án','Dự án'],
+  ['production_plans','Kế hoạch sản xuất','Sản xuất'], ['production_materials','Nguyên vật liệu tổng','Sản xuất'],
+  ['production_accessories','Checklist phụ kiện','Sản xuất'], ['production_paints','Sơn','Sản xuất'],
+  ['production_letters','Checklist chữ','Sản xuất'], ['production_prints','Checklist PP','Sản xuất'],
   ['project_tasks','Công việc','Vận hành'], ['task_assignments','Phân công nhân sự','Vận hành'], ['task_resources','Vật tư','Vận hành'],
   ['task_vehicles','Phương tiện','Vận hành'], ['project_handoffs','Bàn giao','Vận hành'], ['task_templates','Mẫu công việc','Vận hành'],
   ['contracts','Hợp đồng','Tài chính'], ['invoices','Hóa đơn','Tài chính'], ['invoice_items','Chi tiết hóa đơn','Tài chính'], ['payment_plans','Kế hoạch thu','Tài chính'], ['payments','Thanh toán','Tài chính'],
@@ -54,6 +57,12 @@ const ENTITY_CONFIG = Object.freeze({
   payment_plans: { pk: 'payment_plan_id', entity: 'payment_plan', prefix: 'KHTT', label: 'Kế hoạch thanh toán' },
   payments: { pk: 'payment_id', entity: 'payment', prefix: 'TT', label: 'Thanh toán' },
   design_orders: { pk: 'design_order_id', entity: 'design_order', prefix: 'TK', label: 'Order thiết kế' },
+  production_plans: { pk: 'production_plan_id', entity: 'production_plan', prefix: 'KHSX', label: 'Kế hoạch sản xuất' },
+  production_materials: { pk: 'production_material_id', entity: 'production_material', prefix: 'NVL', label: 'Nguyên vật liệu tổng' },
+  production_accessories: { pk: 'production_accessory_id', entity: 'production_accessory', prefix: 'PKSX', label: 'Checklist phụ kiện' },
+  production_paints: { pk: 'production_paint_id', entity: 'production_paint', prefix: 'SON', label: 'Sơn' },
+  production_letters: { pk: 'production_letter_id', entity: 'production_letter', prefix: 'CHU', label: 'Checklist chữ' },
+  production_prints: { pk: 'production_print_id', entity: 'production_print', prefix: 'PP', label: 'Checklist PP' },
   project_items: { pk: 'project_item_id', entity: 'project_item', prefix: 'HM', label: 'Hạng mục' },
   project_departments: { pk: 'project_department_id', entity: 'project_department', prefix: 'PBDA', label: 'Phòng ban dự án' },
   task_templates: { pk: 'task_template_id', entity: 'task_template', prefix: 'MCV', label: 'Mẫu công việc' },
@@ -100,7 +109,16 @@ const FIELD_LABELS = Object.freeze({
   signed_at: 'Ngày ký', effective_date: 'Ngày hiệu lực', expiry_date: 'Ngày hết hiệu lực', contract_status: 'Trạng thái hợp đồng', file_url: 'Tệp hợp đồng'
   ,attachment_id: 'Mã file', attachment_name: 'Tên file', attachment_type: 'Loại file', description: 'Mô tả',
   lead_note_id: 'Mã ghi chú', note_content: 'Nội dung ghi chú', note_at: 'Thời gian ghi chú', visibility: 'Phạm vi ghi chú'
-  ,subtotal_amount: 'Tạm tính', tax_rate: 'Thuế suất (%)', tax_amount: 'Tiền thuế'
+  ,subtotal_amount: 'Tạm tính', tax_rate: 'Thuế suất (%)', tax_amount: 'Tiền thuế',
+  production_date: 'Ngày sản xuất', construction_date: 'Ngày thi công', work_date: 'Ngày thực hiện',
+  project_item_id: 'Hạng mục thi công', work_detail: 'Chi tiết công việc', production_file_url: 'Hồ sơ sản xuất / SOP',
+  production_status: 'Tình trạng sản xuất', assignee_user_id: 'Người thực hiện', completion_at: 'Thời gian hoàn thành',
+  material_name: 'Tên vật tư', specification: 'Quy cách', actual_new_quantity: 'Thực tế dùng NVL mới', issue_status: 'Tình trạng cấp',
+  accessory_name: 'Phụ kiện', preparation_status: 'Tình trạng chuẩn bị', paint_name: 'Màu / loại sơn',
+  checklist_item: 'Nội dung checklist', file_completed: 'Đã hoàn thành file', work_completed: 'Đã hoàn thành',
+  material: 'Chất liệu', sheet_quantity: 'Số tấm 1220×2440', product_type: 'Loại sản phẩm',
+  demo_paper_1_27_m: 'Demo giấy 1.27m', paper_0_914_m: 'Giấy 0.914m', paper_1_07_m: 'Giấy 1.07m',
+  paper_1_27_m: 'Giấy 1.27m', paper_1_52_m: 'Giấy 1.52m', total_m2: 'Tổng m²', completed: 'Hoàn thành', missing_note: 'Còn thiếu'
 });
 
 const DESIGN_ORDER_EXTENSION_SCHEMA = Object.freeze([
@@ -114,6 +132,85 @@ const DESIGN_ORDER_EXTENSION_SCHEMA = Object.freeze([
 const PROJECT_DESIGN_EXTENSION_SCHEMA = Object.freeze([
   { sheet_name: 'projects', purpose: 'Thong tin chung cua du an duoc cac phong ban tham chieu', field_name: 'design_template_type', data_type: 'text', required: false, description: 'Loai mau thiet ke cua du an: new hoac old', foreign_key: '' }
 ]);
+
+const PRODUCTION_TABLE_SCHEMAS = Object.freeze({
+  production_plans: [
+    ['production_plan_id','text',true,'Mã kế hoạch sản xuất tự sinh',''],
+    ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['project_item_id','text',true,'Hạng mục thi công của dự án','project_items.project_item_id'],
+    ['production_date','date',true,'Ngày thực hiện sản xuất',''],
+    ['construction_date','date',false,'Ngày phải mang hạng mục đi thi công',''],
+    ['work_detail','text',true,'Chi tiết công việc phải làm',''],
+    ['unit','text',false,'Đơn vị tính',''], ['quantity','decimal',false,'Số lượng',''],
+    ['production_file_url','url',false,'Hồ sơ sản xuất hoặc SOP tham chiếu',''],
+    ['production_status','text',false,'Tình trạng sản xuất',''],
+    ['assignee_user_id','text',false,'Người thực hiện','users.user_id'],
+    ['completion_at','datetime',false,'Thời gian hoàn thành',''], ['note','text',false,'Lưu ý và ghi chú','']
+  ],
+  production_materials: [
+    ['production_material_id','text',true,'Mã nguyên vật liệu tự sinh',''],
+    ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['project_item_id','text',true,'Hạng mục thi công của dự án','project_items.project_item_id'],
+    ['work_date','date',true,'Ngày chuẩn bị nguyên vật liệu',''],
+    ['material_name','text',true,'Tên vật tư cần chuẩn bị',''], ['specification','text',false,'Quy cách vật tư',''],
+    ['unit','text',false,'Đơn vị tính',''], ['planned_quantity','decimal',true,'Số lượng dự kiến',''],
+    ['actual_new_quantity','decimal',false,'Thực tế sử dụng nguyên vật liệu mới',''],
+    ['issue_status','text',false,'Tình trạng đã cấp hoặc còn thiếu',''], ['note','text',false,'Ghi chú','']
+  ],
+  production_accessories: [
+    ['production_accessory_id','text',true,'Mã checklist phụ kiện tự sinh',''],
+    ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['project_item_id','text',true,'Hạng mục thi công của dự án','project_items.project_item_id'],
+    ['work_date','date',true,'Ngày chuẩn bị phụ kiện',''],
+    ['accessory_name','text',true,'Phụ kiện cần chuẩn bị',''], ['unit','text',false,'Đơn vị tính',''],
+    ['quantity','decimal',false,'Số lượng phụ kiện',''], ['preparation_status','text',false,'Tình trạng chuẩn bị',''],
+    ['note','text',false,'Ghi chú','']
+  ],
+  production_paints: [
+    ['production_paint_id','text',true,'Mã dòng sơn tự sinh',''],
+    ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['project_item_id','text',true,'Hạng mục thi công của dự án','project_items.project_item_id'],
+    ['work_date','date',true,'Ngày thực hiện công việc sơn',''],
+    ['paint_name','text',true,'Màu hoặc loại sơn sử dụng',''], ['quantity','decimal',true,'Số lượng sơn',''],
+    ['unit','text',false,'Đơn vị tính',''], ['preparation_status','text',false,'Tình trạng chuẩn bị',''],
+    ['note','text',false,'Ghi chú','']
+  ],
+  production_letters: [
+    ['production_letter_id','text',true,'Mã checklist chữ tự sinh',''],
+    ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['project_item_id','text',true,'Hạng mục thi công của dự án','project_items.project_item_id'],
+    ['work_date','date',true,'Ngày thực hiện chữ mỹ thuật/CNC',''],
+    ['checklist_item','text',true,'Nội dung chữ hoặc vật tư cần làm',''],
+    ['file_completed','boolean',false,'Đã hoàn thành file CNC',''], ['work_completed','boolean',false,'Đã hoàn thành sản xuất',''],
+    ['material','text',false,'Chất liệu chữ',''], ['sheet_quantity','decimal',false,'Số lượng tấm 1220x2440',''],
+    ['note','text',false,'Ghi chú','']
+  ],
+  production_prints: [
+    ['production_print_id','text',true,'Mã checklist PP tự sinh',''],
+    ['project_id','text',true,'Dự án tham chiếu tự động','projects.project_id'],
+    ['project_item_id','text',true,'Hạng mục thi công của dự án','project_items.project_item_id'],
+    ['production_date','date',true,'Ngày sản xuất',''], ['product_type','text',true,'Loại sản phẩm in',''],
+    ['demo_paper_1_27_m','decimal',false,'Mét giấy demo khổ 1.27m',''],
+    ['paper_0_914_m','decimal',false,'Mét giấy khổ 0.914m',''], ['paper_1_07_m','decimal',false,'Mét giấy khổ 1.07m',''],
+    ['paper_1_27_m','decimal',false,'Mét giấy khổ 1.27m',''], ['paper_1_52_m','decimal',false,'Mét giấy khổ 1.52m',''],
+    ['total_m2','decimal',false,'Tổng diện tích giấy tự tính',''],
+    ['production_status','text',false,'Tình trạng sản xuất',''], ['completed','boolean',false,'Đã hoàn thành',''],
+    ['missing_note','text',false,'Nội dung còn thiếu',''], ['note','text',false,'Ghi chú','']
+  ]
+});
+
+const PRODUCTION_AUDIT_SCHEMA = Object.freeze([
+  ['created_at','datetime',false,'Thời gian tạo',''], ['created_by','text',false,'Người tạo','users.user_id'],
+  ['updated_at','datetime',false,'Thời gian cập nhật',''], ['updated_by','text',false,'Người cập nhật','users.user_id'],
+  ['deleted_at','datetime',false,'Thời gian xóa mềm','']
+]);
+
+function productionSchema_(entity) {
+  const purpose = 'Bảng nghiệp vụ riêng của phòng Sản xuất, liên kết dự án và hạng mục thi công';
+  return (PRODUCTION_TABLE_SCHEMAS[entity] || []).concat(PRODUCTION_AUDIT_SCHEMA).map(function (field) {
+    return { sheet_name: entity, purpose: purpose, field_name: field[0], data_type: field[1], required: field[2], description: field[3], foreign_key: field[4] };
+  });
+}
 
 const INVOICE_EXTENSION_SCHEMA = Object.freeze([
   { sheet_name: 'invoices', purpose: 'Hóa đơn chính gắn với từng dự án', field_name: 'subtotal_amount', data_type: 'currency', required: false, description: 'Tổng tiền hàng trước giảm giá, phát sinh và thuế', foreign_key: '' },

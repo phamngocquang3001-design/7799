@@ -240,6 +240,50 @@ function appendRowsBatch_(entity, records) {
   return normalized;
 }
 
+function createRowsBatch_(entity, records) {
+  entity = assertEntity_(entity);
+  records = records || [];
+  if (!records.length) return [];
+  const config = ENTITY_CONFIG[entity];
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    records.forEach(function (record) {
+      if (record[config.pk]) throw appError_('BATCH_CREATE_ONLY', 'Thêm hàng loạt chỉ nhận các dòng dữ liệu mới');
+      validateRecord_(entity, record);
+    });
+    const ids = nextIds_(config.entity, config.prefix, records.length, true);
+    const prepared = records.map(function (record, index) {
+      const row = Object.assign({}, record);
+      row[config.pk] = ids[index];
+      return row;
+    });
+    const saved = appendRowsBatch_(entity, prepared);
+    appendAuditBatch_('create', entity, saved, true);
+    return saved;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function appendAuditBatch_(action, entity, records, lockHeld) {
+  if (!records || !records.length || entity === APP.AUDIT_SHEET) return;
+  const sheet = sheet_(APP.AUDIT_SHEET);
+  const headers = headers_(APP.AUDIT_SHEET);
+  const user = getCurrentUser_();
+  const config = ENTITY_CONFIG[entity];
+  const now = new Date();
+  const rows = records.map(function (record) {
+    return objectToRow_(headers, {
+      log_id: Utilities.getUuid(), user_id: user.user_id, action_type: action, entity_type: entity,
+      record_id: record[config.pk], before_json: '', after_json: truncateJson_(record), created_at: now,
+      request_id: Utilities.getUuid(), user_agent: 'Apps Script Web App', note: lockHeld ? 'batch_create' : ''
+    });
+  });
+  sheet.getRange(Math.max(sheet.getLastRow() + 1, 2), 1, rows.length, headers.length).setValues(rows);
+  clearCaches_(APP.AUDIT_SHEET);
+}
+
 function validateRecord_(entity, data) {
   const schema = getDataDictionary_()[entity] || [];
   const creating = !data[ENTITY_CONFIG[entity].pk];

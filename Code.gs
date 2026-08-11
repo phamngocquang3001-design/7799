@@ -274,7 +274,7 @@ function convertLeadToCustomer(request) {
 
 function readableRelatedRows_(entity, filters, user, limit) {
   const rule = permissionRule_(entity, user);
-  const projectReference = entity === 'project_departments' && permissionRule_('projects', user) && permissionRule_('projects', user).view;
+  const projectReference = ['project_departments','project_items','project_documents'].indexOf(entity) >= 0 && permissionRule_('projects', user) && permissionRule_('projects', user).view;
   if ((!rule || !rule.view) && !projectReference) return [];
   const result = listRows_(entity, applyDataScopeFilters_(entity, filters || {}, user), limit || APP.MAX_LIST_ROWS).rows;
   return result.map(function (row) { return sanitizeRecordForClient_(entity, row); });
@@ -367,6 +367,52 @@ function buildProjectDetail_(project, user) {
     return Object.assign({}, row, { task_name: task.task_name || '', project_id: project.project_id, department_id: task.department_id || '' });
   });
   return related;
+}
+
+function getProjectProductionData(request) {
+  return handleApi_(function () {
+    request = request || {};
+    const user = requireSession_(request);
+    const project = getRowById_('projects', String(request.project_id || ''));
+    assertPermission_('projects', 'view');
+    assertRecordScope_('projects', project, user);
+    const tables = {};
+    productionEntities_().forEach(function (entity) {
+      const rule = permissionRule_(entity, user);
+      tables[entity] = rule && rule.view
+        ? readableRelatedRows_(entity, { project_id: project.project_id }, user).filter(function (row) { return String(row.project_id) === String(project.project_id); })
+        : [];
+    });
+    return { project_id: project.project_id, tables: tables, loaded_at: new Date() };
+  });
+}
+
+function batchCreateProductionRows(request) {
+  return handleApi_(function () {
+    request = request || {};
+    const user = requireSession_(request);
+    const entity = assertEntity_(request.entity);
+    if (!isProductionEntity_(entity)) throw appError_('INVALID_PRODUCTION_ENTITY', 'Bảng không thuộc phòng Sản xuất');
+    assertPermission_(entity, 'create');
+    const project = getRowById_('projects', String(request.project_id || ''));
+    assertPermission_('projects', 'view');
+    assertRecordScope_('projects', project, user);
+    const rows = Array.isArray(request.rows) ? request.rows : [];
+    if (!rows.length) throw appError_('EMPTY_BATCH', 'Cần nhập ít nhất một dòng dữ liệu');
+    if (rows.length > 100) throw appError_('BATCH_TOO_LARGE', 'Mỗi lần chỉ được lưu tối đa 100 dòng');
+    const allowed = {};
+    productionSchema_(entity).forEach(function (field) {
+      if (!isAuditField_(field.field_name) && field.field_name !== ENTITY_CONFIG[entity].pk && field.field_name !== 'project_id') allowed[field.field_name] = true;
+    });
+    const prepared = rows.map(function (input) {
+      const clean = { project_id: project.project_id };
+      Object.keys(input || {}).forEach(function (field) { if (allowed[field]) clean[field] = input[field]; });
+      return prepareScopedMutation_(entity, prepareMutation_(entity, clean, user, true), user, true);
+    });
+    const saved = createRowsBatch_(entity, prepared);
+    CacheService.getScriptCache().remove(dashboardCacheKey_(user));
+    return { entity: entity, project_id: project.project_id, created: saved.length, rows: saved.map(function (row) { return sanitizeRecordForClient_(entity, row); }) };
+  });
 }
 
 function mutateAppData(request) {
