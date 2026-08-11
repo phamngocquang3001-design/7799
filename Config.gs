@@ -1,6 +1,6 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.9.0',
+  VERSION: '2.10.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
@@ -104,7 +104,8 @@ const DESIGN_ORDER_EXTENSION_SCHEMA = Object.freeze([
   { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'parent_design_order_id', data_type: 'text', required: false, description: 'Order cha de hien thi cay phan cong', foreign_key: 'design_orders.design_order_id' },
   { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'work_name', data_type: 'text', required: false, description: 'Ten noi bo cua phan cong; order goc duoc tu sinh theo du an', foreign_key: '' },
   { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'progress_percent', data_type: 'percent', required: false, description: 'Tien do do nguoi thiet ke khai bao, tu 0 den 100', foreign_key: '' },
-  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'result_note', data_type: 'text', required: false, description: 'Ket qua va ghi chu ban giao file thiet ke', foreign_key: '' }
+  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'result_note', data_type: 'text', required: false, description: 'Ket qua va ghi chu ban giao file thiet ke', foreign_key: '' },
+  { sheet_name: 'design_orders', purpose: 'Bang cong viec rieng cua phong Thiet ke', field_name: 'leader_user_id', data_type: 'text', required: false, description: 'Leader team Thiet ke duoc Sale chon de nhan order va tao phan cong con', foreign_key: 'users.user_id' }
 ]);
 
 const PROJECT_DESIGN_EXTENSION_SCHEMA = Object.freeze([

@@ -618,6 +618,22 @@ function getPermissionMap_(user) {
   return result;
 }
 
+function designLeaderUsers_() {
+  const departmentLeaderId = departmentLeaderId_('design');
+  const personalLeaderIds = {};
+  listRows_('role_permissions', { resource_code: 'design_orders', is_active: true }, 500).rows.forEach(function (row) {
+    const roleCode = String(row.role_code || '');
+    if (roleCode.indexOf('user:') === 0 && row.can_view && row.can_create) personalLeaderIds[roleCode.slice(5)] = true;
+  });
+  return listRows_('users', { department_id: 'design', user_status: 'active' }, 500).rows.filter(function (candidate) {
+    return String(candidate.user_id) === String(departmentLeaderId) || !!personalLeaderIds[candidate.user_id];
+  });
+}
+
+function isEligibleDesignLeader_(userId) {
+  return designLeaderUsers_().some(function (candidate) { return String(candidate.user_id) === String(userId || ''); });
+}
+
 function getEmployeePermissions_(userId) {
   assertPermission_('users', 'update');
   const employee = getRowById_('users', String(userId || ''));
@@ -755,7 +771,9 @@ function applyDataScopeFilters_(entity, filters, user) {
     }
     if (entity === 'design_orders') {
       if (user.department_id !== 'design') scoped.design_order_id = [];
-      else if (!isDepartmentLeader_('design', user)) scoped.designer_id = user.user_id;
+      else scoped.design_order_id = listRows_('design_orders', {}, APP.MAX_LIST_ROWS).rows.filter(function (order) {
+        return String(order.leader_user_id || '') === String(user.user_id) || String(order.designer_id || '') === String(user.user_id);
+      }).map(function (order) { return order.design_order_id; });
     }
   }
   return scoped;
@@ -831,7 +849,7 @@ function assertRecordScope_(entity, record, user) {
     visible = !!task && String(task.department_id || '') === String(user.department_id);
   }
   if (rule.scope === 'department' && entity === 'design_orders') {
-    visible = user.department_id === 'design' && (isDepartmentLeader_('design', user) || String(record.designer_id || '') === String(user.user_id));
+    visible = user.department_id === 'design' && (String(record.leader_user_id || '') === String(user.user_id) || String(record.designer_id || '') === String(user.user_id));
   }
   if (!visible) throw appError_('ACCESS_DENIED_SCOPE', 'Bản ghi nằm ngoài phạm vi dữ liệu được cấp');
 }
@@ -984,13 +1002,16 @@ function prepareMutation_(entity, data, user, creating) {
     const effectiveOrder = Object.assign({}, currentOrder || {}, data);
     const parentOrder = effectiveOrder.parent_design_order_id ? getRowById_('design_orders', effectiveOrder.parent_design_order_id) : null;
     const privilegedOrderUser = ['admin','manager'].indexOf(user.role_code) >= 0;
-    const designLeaderId = departmentLeaderId_('design');
     if (creating) {
       if (parentOrder) {
-        if (!privilegedOrderUser && String(user.user_id) !== String(designLeaderId)) throw appError_('DESIGN_LEADER_ONLY', 'Chi Leader Thiet ke duoc tao phan cong con');
+        if (!privilegedOrderUser && String(user.user_id) !== String(parentOrder.leader_user_id || '')) throw appError_('DESIGN_LEADER_ONLY', 'Chi Leader Thiet ke duoc chon nhan order nay moi duoc tao phan cong con');
         data.project_id = parentOrder.project_id;
+        data.leader_user_id = parentOrder.leader_user_id;
       } else if (user.role_code !== 'sales' && !privilegedOrderUser) {
         throw appError_('DESIGN_ROOT_SALES_ONLY', 'Chi Sale, quan ly hoac admin duoc tao order Thiet ke goc');
+      } else {
+        if (!data.leader_user_id) throw appError_('DESIGN_LEADER_REQUIRED', 'Vui long chon Leader team Thiet ke nhan order');
+        if (!isEligibleDesignLeader_(data.leader_user_id)) throw appError_('INVALID_DESIGN_LEADER', 'Leader duoc chon phai la nhan su Thiet ke dang hoat dong va duoc cap quyen Leader');
       }
       const designProject = getRowById_('projects', data.project_id);
       if (!designProject) throw appError_('PROJECT_REQUIRED', 'Khong tim thay du an cua order Thiet ke');
@@ -998,7 +1019,7 @@ function prepareMutation_(entity, data, user, creating) {
       data.ordered_by = user.user_id;
       data.ordered_at = data.ordered_at || new Date();
       data.assigned_at = data.assigned_at || new Date();
-      data.designer_id = parentOrder ? data.designer_id : designLeaderId;
+      data.designer_id = parentOrder ? data.designer_id : '';
       data.work_name = data.work_name || (parentOrder ? 'Phan cong thiet ke' : 'Order thiet ke - ' + (designProject.project_name || designProject.project_id));
       data.design_type = designProject.service_type || '';
       data.template_type = designProject.design_template_type || '';
@@ -1008,10 +1029,11 @@ function prepareMutation_(entity, data, user, creating) {
       data.revision_count = Number(data.revision_count || 0);
       data.kpi_days = Number(data.kpi_days || 0);
       data.extended_days = Number(data.extended_days || 0);
-      if (!designLeaderId) throw appError_('DESIGN_LEADER_REQUIRED', 'Phong Thiet ke chua duoc cau hinh Leader');
-      const designAssignee = getRowById_('users', data.designer_id);
-      if (!designAssignee || designAssignee.user_status !== 'active' || designAssignee.department_id !== 'design') throw appError_('INVALID_DESIGN_ASSIGNEE', 'Nguoi thiet ke phai la nhan su dang hoat dong cua phong Thiet ke');
-    } else if (!privilegedOrderUser && String(user.user_id) !== String(designLeaderId)) {
+      if (parentOrder) {
+        const designAssignee = getRowById_('users', data.designer_id);
+        if (!designAssignee || designAssignee.user_status !== 'active' || designAssignee.department_id !== 'design') throw appError_('INVALID_DESIGN_ASSIGNEE', 'Nguoi thiet ke phai la nhan su dang hoat dong cua phong Thiet ke');
+      }
+    } else if (!privilegedOrderUser && String(user.user_id) !== String(currentOrder.leader_user_id || '')) {
       if (String(currentOrder.designer_id || '') !== String(user.user_id)) throw appError_('DESIGN_ORDER_ASSIGNEE_ONLY', 'Ban khong phai nguoi thiet ke cua order nay');
       const allowedOrderFields = ['design_order_id','progress_status','progress_percent','revision_count','final_design_url','result_note','note'];
       Object.keys(data).forEach(function (field) { if (allowedOrderFields.indexOf(field) < 0) delete data[field]; });

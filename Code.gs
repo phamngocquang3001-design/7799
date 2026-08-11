@@ -27,6 +27,7 @@ function getAppBootstrap(request) {
     const projectItems = scopedLookup_('project_items', user, 300);
     const projectDepartments = scopedLookup_('project_departments', user, 300);
     const quotations = scopedLookup_('quotations', user, 300);
+    const designLeaders = designLeaderUsers_().map(sanitizeUser_);
     return {
       app: { name: APP.NAME, version: APP.VERSION, timezone: APP.TIMEZONE },
       user: sanitizeUser_(user),
@@ -37,7 +38,7 @@ function getAppBootstrap(request) {
       lookups: {
         departments: departments, users: users, leads: leads, projects: projects, customers: customers,
         opportunities: opportunities, invoices: invoices, tasks: tasks, projectItems: projectItems,
-        projectDepartments: projectDepartments, quotations: quotations
+        projectDepartments: projectDepartments, quotations: quotations, designLeaders: designLeaders
       },
       demoStages: DEMO_STAGES,
       dashboard: buildDashboard_()
