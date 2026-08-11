@@ -109,6 +109,7 @@ check('survey image gallery', appHtml.includes('renderSurveyGallery') && appHtml
 check('shared design task schema', config.includes('PROJECT_TASK_DESIGN_EXTENSION_SCHEMA') && ['assignee_user_id','assigned_at','template_type','revision_count','kpi_days','extended_days'].every((name) => config.includes(name)), 'project_tasks design extension is incomplete');
 check('design parent child workflow', services.includes('DESIGN_ROOT_SALES_ONLY') && services.includes('DESIGN_LEADER_ONLY') && services.includes("data.task_type = 'design_execution'") && services.includes('departmentLeaderId_'), 'design leader assignment rules are incomplete');
 check('design task tree UI', appHtml.includes('renderDesignTaskNode') && appHtml.includes('renderDesignTaskDetail') && appHtml.includes('openDesignTaskForm') && styles.includes('.design-task-row'), 'design task tree/detail UI is incomplete');
+check('design assignee progress form', appHtml.includes('openDesignTaskProgressForm') && appHtml.includes('canUpdateDesignTask') && services.includes('DESIGN_TASK_ASSIGNEE_ONLY'), 'design assignee progress update is incomplete');
 check('project tasks single load budget', config.includes('MAX_LIST_ROWS: 5000') && code.includes("'project_tasks'"), 'project task load budget is too small');
 
 process.stdout.write(`\nSmoke test completed: ${runtimeFiles.length} runtime files validated.\n`);
