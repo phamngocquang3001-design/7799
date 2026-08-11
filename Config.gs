@@ -1,9 +1,12 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.11.0',
+  VERSION: '2.12.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
+  DATA_CACHE_SECONDS: 120,
+  SESSION_CACHE_SECONDS: 300,
+  DASHBOARD_CACHE_SECONDS: 60,
   MAX_LIST_ROWS: 5000,
   DEMO_SHEET: 'demo_scenarios',
   AUDIT_SHEET: 'audit_logs',

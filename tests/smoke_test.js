@@ -113,5 +113,12 @@ check('design parent child workflow', services.includes("entity === 'design_orde
 check('design task tree UI', appHtml.includes('renderDesignTaskNode') && appHtml.includes('renderDesignTaskDetail') && appHtml.includes('openDesignTaskForm') && styles.includes('.design-task-row'), 'design task tree/detail UI is incomplete');
 check('design assignee progress form', appHtml.includes('openDesignTaskProgressForm') && appHtml.includes('canUpdateDesignTask') && services.includes('DESIGN_ORDER_ASSIGNEE_ONLY'), 'design assignee progress update is incomplete');
 check('project references in design UI', appHtml.includes('designProjectItems') && appHtml.includes('designProposalDocument') && appHtml.includes('r.design_orders') && appHtml.includes('Bảng riêng design_orders'), 'design UI still duplicates project fields');
+check('lightweight bootstrap', code.includes('function getAppReferenceData(') && code.includes('background_loading: true') && !/function getAppBootstrap[\s\S]*?setupSystem_\(\)[\s\S]*?function getAppReferenceData/.test(code), 'bootstrap still blocks on setup or full reference reads');
+check('background data warmup', appHtml.includes('warmApplicationData') && appHtml.includes('scheduleIdlePrefetch') && appHtml.includes('prefetchPage') && appHtml.includes('sessionStorage'), 'background reference/dashboard prefetch is incomplete');
+check('client data cache', appHtml.includes('entityCacheKey') && appHtml.includes('fetchEntityPage') && appHtml.includes('detailCacheKey') && appHtml.includes('fetchEntityDetail'), 'entity/detail cache is incomplete');
+check('server sheet cache', dataStore.includes('function recordsForEntity_') && dataStore.includes("'records:' + entity") && dataStore.includes('REQUEST_RECORDS_CACHE_'), 'server sheet rows are not cached');
+check('cached auth session', services.includes('sessionCacheKey_') && services.includes('SESSION_CACHE_SECONDS') && services.includes('auth_infrastructure:v2'), 'auth/session fast path is incomplete');
+check('single startup RPC', appHtml.includes("if(state.sessionToken)return enterApplication()") && appHtml.includes("callServer('getAppBootstrap')"), 'saved sessions still make a blocking resume RPC before bootstrap');
+check('dashboard cache', services.includes('dashboardCacheKey_') && services.includes('DASHBOARD_CACHE_SECONDS') && code.includes('readDashboardCache_'), 'dashboard is recomputed on every request');
 
 process.stdout.write(`\nSmoke test completed: ${runtimeFiles.length} runtime files validated.\n`);

@@ -1,3 +1,5 @@
+var REQUEST_RECORDS_CACHE_ = {};
+
 function db_() {
   return SpreadsheetApp.openById(APP.SPREADSHEET_ID);
 }
@@ -38,15 +40,10 @@ function objectToRow_(headers, object, currentRow) {
 
 function listRows_(entity, filters, limit, offset, search) {
   entity = assertEntity_(entity);
-  const sheet = sheet_(entity);
-  const headers = headers_(entity);
-  const lastRow = sheet.getLastRow();
   const max = Math.min(Number(limit) || 200, APP.MAX_LIST_ROWS);
   const start = Math.max(Number(offset) || 0, 0);
-  if (lastRow < 2) return { rows: [], total: 0, limit: max, offset: start };
-  const values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
   const normalizedSearch = String(search || '').trim().toLowerCase();
-  const matched = values.map(function (row) { return rowToObject_(headers, row); }).filter(function (record) {
+  const matched = recordsForEntity_(entity).filter(function (record) {
     if (record.deleted_at) return false;
     const validFilters = Object.keys(filters || {}).every(function (key) {
       const expected = filters[key];
@@ -66,10 +63,30 @@ function listRows_(entity, filters, limit, offset, search) {
   return { rows: matched.slice(start, start + max), total: matched.length, limit: max, offset: start };
 }
 
+function recordsForEntity_(entity) {
+  if (REQUEST_RECORDS_CACHE_[entity]) return REQUEST_RECORDS_CACHE_[entity];
+  const cache = CacheService.getScriptCache();
+  const key = 'records:' + entity;
+  const cached = cache.get(key);
+  if (cached) {
+    REQUEST_RECORDS_CACHE_[entity] = JSON.parse(cached);
+    return REQUEST_RECORDS_CACHE_[entity];
+  }
+  const sheet = sheet_(entity);
+  const headers = headers_(entity);
+  const lastRow = sheet.getLastRow();
+  const records = lastRow < 2 ? [] : sheet.getRange(2, 1, lastRow - 1, headers.length).getValues().map(function (row) {
+    return rowToObject_(headers, row);
+  });
+  REQUEST_RECORDS_CACHE_[entity] = records;
+  const json = JSON.stringify(records);
+  if (json.length < 95000) cache.put(key, json, APP.DATA_CACHE_SECONDS);
+  return records;
+}
+
 function getRowById_(entity, id) {
   const config = ENTITY_CONFIG[entity];
-  const located = findRowByValue_(entity, config.pk, id);
-  return located ? rowToObject_(located.headers, located.values) : null;
+  return recordsForEntity_(entity).filter(function (record) { return String(record[config.pk] || '') === String(id || ''); })[0] || null;
 }
 
 function findRowByValue_(entity, field, value) {
@@ -302,6 +319,8 @@ function truncateJson_(value) { const text = JSON.stringify(value); return text.
 function appError_(code, message) { const error = new Error(message); error.code = code; return error; }
 function assertEntity_(entity) { if (!ENTITY_CONFIG[entity]) throw appError_('INVALID_ENTITY', 'Loại dữ liệu không hợp lệ: ' + entity); return entity; }
 function clearCaches_(entity) {
+  delete REQUEST_RECORDS_CACHE_[entity];
+  CacheService.getScriptCache().remove('records:' + entity);
   if (entity === 'master_data') CacheService.getScriptCache().remove('master_data_map');
   if (entity === 'data_dictionary') CacheService.getScriptCache().remove('data_dictionary');
 }

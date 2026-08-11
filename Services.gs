@@ -1,4 +1,5 @@
 var REQUEST_USER_ = null;
+var REQUEST_PERMISSION_MAP_ = {};
 
 const MASTER_SEED = [
   ['lead_status','new','Mới'], ['lead_status','qualified','Đã lọc'], ['lead_status','contacted','Đã liên hệ'], ['lead_status','converted','Đã chuyển đổi'], ['lead_status','lost','Không phù hợp'],
@@ -52,6 +53,9 @@ function setupSystem_() {
 // -----------------------------------------------------------------------------
 
 function ensureAuthInfrastructure_(lockHeld) {
+  const readinessCache = CacheService.getScriptCache();
+  const readinessKey = 'auth_infrastructure:v2';
+  if (!lockHeld && readinessCache.get(readinessKey)) return;
   const lock = lockHeld ? null : LockService.getScriptLock();
   if (lock) lock.waitLock(30000);
   try {
@@ -67,6 +71,7 @@ function ensureAuthInfrastructure_(lockHeld) {
       sheet.hideSheet();
     }
     CacheService.getScriptCache().remove('headers:' + APP.AUTH_SHEET);
+    readinessCache.put(readinessKey, '1', 21600);
   } finally {
     if (lock) lock.releaseLock();
   }
@@ -157,8 +162,10 @@ function resumeAppSession(request) {
 function logoutApp(request) {
   return handleApi_(function () {
     ensureAuthInfrastructure_();
-    const located = findAuthSession_(String((request || {}).session_token || (request || {})._session_token || ''));
+    const token = String((request || {}).session_token || (request || {})._session_token || '');
+    const located = findAuthSession_(token);
     if (located) located.sheet.getRange(located.rowIndex, 7).setValue(new Date());
+    if (token) CacheService.getScriptCache().remove(sessionCacheKey_(token));
     REQUEST_USER_ = null;
     return { logged_out: true };
   });
@@ -167,7 +174,8 @@ function logoutApp(request) {
 function changeMyPassword(request) {
   return handleApi_(function () {
     request = request || {};
-    const user = requireSession_(request);
+    const sessionUser = requireSession_(request);
+    const user = getRowById_('users', sessionUser.user_id);
     validatePassword_(request.new_password);
     if (!constantTimeEquals_(derivePasswordHash_(String(request.current_password || ''), String(user.password_salt || '')), String(user.password_hash || ''))) {
       throw appError_('LOGIN_FAILED', 'Mật khẩu hiện tại không đúng');
@@ -181,6 +189,18 @@ function changeMyPassword(request) {
 function requireSession_(request) {
   ensureAuthInfrastructure_();
   const token = String((request || {}).session_token || (request || {})._session_token || '');
+  if (!token) throw appError_('AUTH_REQUIRED', 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
+  const cache = CacheService.getScriptCache();
+  const cacheKey = sessionCacheKey_(token);
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    const entry = JSON.parse(cached);
+    if (dateValue_(entry.expires_at) > Date.now() && entry.user && entry.user.user_status === 'active') {
+      REQUEST_USER_ = entry.user;
+      return entry.user;
+    }
+    cache.remove(cacheKey);
+  }
   const located = findAuthSession_(token);
   if (!located) throw appError_('AUTH_REQUIRED', 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn');
   const session = rowToObject_(located.headers, located.values);
@@ -188,8 +208,10 @@ function requireSession_(request) {
   const user = getRowById_('users', session.user_id);
   if (!user || user.user_status !== 'active' || user.deleted_at) throw appError_('ACCESS_DENIED', 'Tài khoản đã bị khóa hoặc ngừng hoạt động');
   if (!session.last_seen_at || Date.now() - dateValue_(session.last_seen_at) > 60 * 60000) located.sheet.getRange(located.rowIndex, 6).setValue(new Date());
-  REQUEST_USER_ = user;
-  return user;
+  const safeUser = sanitizeUser_(user);
+  cache.put(cacheKey, JSON.stringify({ expires_at: session.expires_at, user: safeUser }), APP.SESSION_CACHE_SECONDS);
+  REQUEST_USER_ = safeUser;
+  return safeUser;
 }
 
 function issueSession_(user) {
@@ -200,7 +222,12 @@ function issueSession_(user) {
   const headers = headers_(APP.AUTH_SHEET);
   const row = objectToRow_(headers, { session_id: Utilities.getUuid(), token_hash: tokenHash_(token), user_id: user.user_id, created_at: now, expires_at: expires, last_seen_at: now, revoked_at: '' });
   sheet.getRange(Math.max(sheet.getLastRow() + 1, 2), 1, 1, headers.length).setValues([row]);
+  CacheService.getScriptCache().put(sessionCacheKey_(token), JSON.stringify({ expires_at: serializeValue_(expires), user: sanitizeUser_(user) }), APP.SESSION_CACHE_SECONDS);
   return { authenticated: true, session_token: token, expires_at: serializeValue_(expires), user: sanitizeUser_(user), must_change_password: !!user.must_change_password };
+}
+
+function sessionCacheKey_(token) {
+  return 'auth_session:' + tokenHash_(String(token || '')).slice(0, 40);
 }
 
 function findAuthSession_(token) {
@@ -603,7 +630,12 @@ function getCurrentUser_() {
 }
 
 function getPermissionMap_(user) {
-  if (user.role_code === 'admin') return { '*': { view: true, create: true, update: true, delete: true, scope: 'all' } };
+  const memoKey = String(user.user_id || '') + ':' + String(user.role_code || '');
+  if (REQUEST_PERMISSION_MAP_[memoKey]) return REQUEST_PERMISSION_MAP_[memoKey];
+  if (user.role_code === 'admin') {
+    REQUEST_PERMISSION_MAP_[memoKey] = { '*': { view: true, create: true, update: true, delete: true, scope: 'all' } };
+    return REQUEST_PERMISSION_MAP_[memoKey];
+  }
   const rows = listRows_('role_permissions', { role_code: user.role_code, is_active: true }, 500).rows;
   const result = {};
   rows.forEach(function (row) {
@@ -615,6 +647,7 @@ function getPermissionMap_(user) {
   });
   if (user.role_code === 'manager') result.audit_logs = { view: true, create: false, update: false, delete: false, scope: 'all' };
   else result.audit_logs = { view: false, create: false, update: false, delete: false, scope: 'all' };
+  REQUEST_PERMISSION_MAP_[memoKey] = result;
   return result;
 }
 
@@ -695,12 +728,17 @@ function revokeUserSessions_(userId) {
   const sheet = sheet_(APP.AUTH_SHEET);
   const headers = headers_(APP.AUTH_SHEET);
   const userColumn = headers.indexOf('user_id');
+  const tokenColumn = headers.indexOf('token_hash');
   const revokedColumn = headers.indexOf('revoked_at');
   if (userColumn < 0 || revokedColumn < 0 || sheet.getLastRow() < 2) return;
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, headers.length).getValues();
   let changed = false;
   values.forEach(function (row) {
-    if (String(row[userColumn]) === String(userId) && !row[revokedColumn]) { row[revokedColumn] = new Date(); changed = true; }
+    if (String(row[userColumn]) === String(userId) && !row[revokedColumn]) {
+      row[revokedColumn] = new Date();
+      if (tokenColumn >= 0 && row[tokenColumn]) CacheService.getScriptCache().remove('auth_session:' + String(row[tokenColumn]).slice(0, 40));
+      changed = true;
+    }
   });
   if (changed) sheet.getRange(2, 1, values.length, headers.length).setValues(values);
 }
@@ -898,8 +936,21 @@ function prepareScopedMutation_(entity, data, user, creating) {
   return scoped;
 }
 
-function buildDashboard_() {
+function dashboardCacheKey_(user) {
+  return 'dashboard:' + String((user || {}).user_id || 'anonymous');
+}
+
+function readDashboardCache_(user) {
+  const cached = CacheService.getScriptCache().get(dashboardCacheKey_(user));
+  return cached ? JSON.parse(cached) : null;
+}
+
+function buildDashboard_(force) {
   const user = getCurrentUser_();
+  if (!force) {
+    const cached = readDashboardCache_(user);
+    if (cached) return cached;
+  }
   function readableRows(entity, limit) {
     const rule = permissionRule_(entity, user);
     if (!rule || !rule.view) return [];
@@ -920,12 +971,15 @@ function buildDashboard_() {
   const dueToday = tasks.filter(function (t) { return sameDay_(t.planned_start_at, now) || sameDay_(t.deadline_at, now); });
   const totalRevenue = invoices.reduce(function (sum, row) { return sum + Number(row.final_amount || 0); }, 0);
   const paid = invoices.reduce(function (sum, row) { return sum + Number(row.paid_amount || 0); }, 0);
-  return {
+  const dashboard = {
     metrics: { leads: leads.length, opportunities: opportunities.length, customers: customers.length, active_projects: activeProjects.length, overdue_tasks: overdue.length, due_today: dueToday.length, total_revenue: totalRevenue, paid: paid, remaining: totalRevenue - paid },
     upcoming_projects: upcoming,
     overdue_tasks: overdue.slice(0,10),
     active_scenarios: scenarios.filter(function (s) { return s.scenario_status !== 'completed'; }).slice(0,10)
   };
+  const json = JSON.stringify(dashboard);
+  if (json.length < 95000) CacheService.getScriptCache().put(dashboardCacheKey_(user), json, APP.DASHBOARD_CACHE_SECONDS);
+  return dashboard;
 }
 
 function sameDay_(value, date) {
@@ -1109,6 +1163,7 @@ function ensureLeadOpportunityForMutation_(leadId, user) {
 }
 
 function afterMutation_(entity, result) {
+  CacheService.getScriptCache().remove(dashboardCacheKey_(getCurrentUser_()));
   if (entity === 'design_orders' && result.record && result.record.design_order_id) {
     const synchronizedOrder = syncDesignOrderProgress_(result.record.design_order_id);
     if (synchronizedOrder && !synchronizedOrder.deleted_at) result.record = synchronizedOrder;

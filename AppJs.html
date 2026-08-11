@@ -1,7 +1,7 @@
 <script>
 (function(){
 'use strict';
-var state={page:'dashboard',entity:null,rows:[],bootstrap:null,modal:null,detail:null,detailParent:null,detailTab:'info',customerTab:'info',projectTab:'overview',designTaskId:'',auth:null,sessionToken:localStorage.getItem('weddingops_session')||'',selectedScenario:null,demoResult:null,acceptance:null,busy:false,offset:0,pageSize:50,total:0,search:''};
+var state={page:'dashboard',entity:null,rows:[],bootstrap:null,modal:null,detail:null,detailParent:null,detailTab:'info',customerTab:'info',projectTab:'overview',designTaskId:'',auth:null,sessionToken:localStorage.getItem('weddingops_session')||'',selectedScenario:null,demoResult:null,acceptance:null,busy:false,offset:0,pageSize:50,total:0,search:'',referenceReady:false,referencePromise:null,backgroundPromise:null,entityCache:{},entityPromises:{},detailCache:{},detailPromises:{},prefetchStarted:false};
 var READ_ONLY_ENTITIES=['audit_logs'];
 var SCREENS={
   sales:{entity:'leads',title:'Khách hàng tiềm năng',subtitle:'Lead thô là hồ sơ trung tâm; cơ hội, chăm sóc, khảo sát và báo giá được quản lý trong pipeline của từng Lead',columns:['lead_id','contact_name','phone','source_channel','raw_need','lead_status','assigned_sales_id','created_at']},
@@ -155,14 +155,15 @@ function bindEvents(){
   document.getElementById('setupForm').addEventListener('submit',submitAdminSetup);
   document.getElementById('changePasswordForm').addEventListener('submit',submitPasswordChange);
   document.addEventListener('keydown',function(e){if(e.key==='Escape'){closeModal();closeAuthModal();}if(e.key==='/'&&!/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)){e.preventDefault();focusTableSearch();}});
+  document.addEventListener('mouseover',function(e){var nav=e.target.closest('[data-page]');if(nav)prefetchPage(nav.dataset.page);var detail=e.target.closest('[data-action="view-detail"]');if(detail)prefetchDetail(detail.dataset.entity||state.entity,detail.dataset.id);});
 }
 function rpcRequestId(){return 'RPC-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,8).toUpperCase();}
-function callServer(fn,payload){payload=Object.assign({},payload||{});var requestId=rpcRequestId();payload._request_id=requestId;if(state.sessionToken)payload._session_token=state.sessionToken;console.info('[WeddingOps RPC:start]',{fn:fn,request_id:requestId});return new Promise(function(resolve,reject){google.script.run.withSuccessHandler(function(result){if(result===null||typeof result==='undefined'){console.error('[WeddingOps RPC:empty]',{fn:fn,request_id:requestId});var emptyError=new Error('Máy chủ không trả về dữ liệu. Mã yêu cầu: '+requestId);emptyError.code='RPC_EMPTY_RESPONSE';emptyError.request_id=requestId;reject(emptyError);return;}console.info('[WeddingOps RPC:success]',{fn:fn,request_id:requestId,ok:!!result.ok});resolve(result);}).withFailureHandler(function(error){console.error('[WeddingOps RPC:failure]',{fn:fn,request_id:requestId,message:error&&error.message||String(error)});if(error&&typeof error==='object')error.request_id=requestId;reject(error);})[fn](payload);});}
+function callServer(fn,payload){payload=Object.assign({},payload||{});var requestId=rpcRequestId(),started=performance.now();payload._request_id=requestId;if(state.sessionToken)payload._session_token=state.sessionToken;console.info('[WeddingOps RPC:start]',{fn:fn,request_id:requestId});return new Promise(function(resolve,reject){google.script.run.withSuccessHandler(function(result){var duration=Math.round(performance.now()-started);if(result===null||typeof result==='undefined'){console.error('[WeddingOps RPC:empty]',{fn:fn,request_id:requestId,duration_ms:duration});var emptyError=new Error('Máy chủ không trả về dữ liệu. Mã yêu cầu: '+requestId);emptyError.code='RPC_EMPTY_RESPONSE';emptyError.request_id=requestId;reject(emptyError);return;}console.info('[WeddingOps RPC:success]',{fn:fn,request_id:requestId,ok:!!result.ok,duration_ms:duration});resolve(result);}).withFailureHandler(function(error){console.error('[WeddingOps RPC:failure]',{fn:fn,request_id:requestId,duration_ms:Math.round(performance.now()-started),message:error&&error.message||String(error)});if(error&&typeof error==='object')error.request_id=requestId;reject(error);})[fn](payload);});}
 function unwrap(result){if(!result||!result.ok){if(!result)console.error('[WeddingOps RPC:malformed]',result);var error=new Error(result&&result.error?result.error.message:'Không nhận được phản hồi từ máy chủ');error.code=result&&result.error&&result.error.code||'APP_ERROR';if(error.code==='AUTH_REQUIRED'||error.code==='AUTH_EXPIRED')expireLocalSession();throw error;}return result.data;}
 
 async function initializeAccess(){
   showLoginLoading();
-  if(state.sessionToken){try{var resumed=unwrap(await callServer('resumeAppSession'));if(resumed.must_change_password)return showLoginMode('change');return enterApplication();}catch(e){state.sessionToken='';localStorage.removeItem('weddingops_session');}}
+  if(state.sessionToken)return enterApplication();
   try{var loginState=unwrap(await callServer('getLoginState'));showLoginMode(loginState.needs_setup?'setup':'login');}catch(err){showLoginFailure(err.message||err);}
 }
 function showLoginLoading(){document.getElementById('app').classList.add('hidden');document.getElementById('loginPage').classList.remove('hidden');['loginForm','setupForm','changePasswordForm','loginError'].forEach(function(id){document.getElementById(id).classList.add('hidden');});document.getElementById('loginLoading').classList.remove('hidden');}
@@ -178,9 +179,15 @@ async function logoutCurrentUser(){try{await callServer('logoutApp');}catch(e){}
 function expireLocalSession(){state.sessionToken='';localStorage.removeItem('weddingops_session');}
 async function loadBootstrap(){
   setLoading();
-  try{state.bootstrap=unwrap(await callServer('getAppBootstrap'));applyUser();applyNavigationPermissions();renderCurrent();}
+  try{state.bootstrap=unwrap(await callServer('getAppBootstrap'));if(state.bootstrap.user&&state.bootstrap.user.must_change_password)return showLoginMode('change');restoreWarmClientCache();applyUser();applyNavigationPermissions();renderCurrent();warmApplicationData(true);}
   catch(err){if(err.code==='AUTH_REQUIRED'||err.code==='AUTH_EXPIRED'){showLoginMode('login');showLoginFailure(err.message);return;}showFatal(err);}
 }
+
+function warmClientCacheKey(){var user=state.bootstrap&&state.bootstrap.user||{},app=state.bootstrap&&state.bootstrap.app||{};return'weddingops_warm:'+(user.user_id||'anonymous')+':'+(app.version||'0');}
+function restoreWarmClientCache(){try{var raw=sessionStorage.getItem(warmClientCacheKey());if(!raw)return;var cached=JSON.parse(raw);if(cached.reference){state.bootstrap.schema=cached.reference.schema||{};state.bootstrap.lookups=cached.reference.lookups||state.bootstrap.lookups;state.referenceReady=true;}if(cached.dashboard)state.bootstrap.dashboard=cached.dashboard;}catch(error){console.warn('[WeddingOps cache:restore]',error);}}
+function persistWarmClientCache(){try{sessionStorage.setItem(warmClientCacheKey(),JSON.stringify({reference:{schema:state.bootstrap.schema||{},lookups:state.bootstrap.lookups||{}},dashboard:state.bootstrap.dashboard||{},saved_at:Date.now()}));}catch(error){console.warn('[WeddingOps cache:store]',error);}}
+function ensureReferenceData(force){if(state.referenceReady&&!force)return Promise.resolve(state.bootstrap);if(state.referencePromise&&!force)return state.referencePromise;state.referencePromise=callServer('getAppReferenceData').then(function(result){var data=unwrap(result);state.bootstrap.schema=data.schema||{};state.bootstrap.lookups=data.lookups||state.bootstrap.lookups;state.referenceReady=true;persistWarmClientCache();if(state.rows.length&&!state.detail)renderEntityTable();return state.bootstrap;}).catch(function(error){console.warn('[WeddingOps background:reference]',error);throw error;}).finally(function(){state.referencePromise=null;});return state.referencePromise;}
+function warmApplicationData(force){if(state.backgroundPromise&&!force)return state.backgroundPromise;var reference=ensureReferenceData(!!force).catch(function(){return null;}),dashboard=callServer('getDashboard').then(function(result){state.bootstrap.dashboard=unwrap(result);persistWarmClientCache();if(state.page==='dashboard')renderDashboard();return state.bootstrap.dashboard;}).catch(function(error){console.warn('[WeddingOps background:dashboard]',error);return null;});state.backgroundPromise=Promise.all([reference,dashboard]).then(function(){scheduleIdlePrefetch();return true;}).finally(function(){state.backgroundPromise=null;});return state.backgroundPromise;}
 async function openAuthCenter(){
   document.getElementById('authModal').classList.remove('hidden');
   document.getElementById('authModalBody').innerHTML='<div class="loading-card" style="min-height:180px"><div class="spinner"></div><p>Đang kiểm tra quyền...</p></div>';
@@ -211,7 +218,7 @@ function renderCurrent(){if(state.page==='dashboard')return renderDashboard();if
 function setHeader(title,subtitle,showPrimary){text('pageTitle',title);text('breadcrumbPage',title);text('pageSubtitle',subtitle);var btn=document.getElementById('primaryButton');btn.classList.toggle('hidden',!showPrimary||!can(state.entity,'create'));btn.textContent=state.page==='demo'?'+ Tạo kịch bản':'+ Thêm mới';}
 function focusTableSearch(){var input=document.getElementById('tableSearch');if(input){input.focus();input.select();}else toast('Mở một phân hệ dữ liệu để tìm nhanh.');}
 function setLoading(){document.getElementById('content').innerHTML='<div class="loading-card"><div class="spinner"></div><p>Đang tải dữ liệu...</p></div>';}
-async function refreshCurrent(){if(state.detail)return openDetail(state.detail.entity,state.detail.record[primaryKey(state.detail.entity)]);if(state.page==='dashboard'){try{state.bootstrap.dashboard=unwrap(await callServer('getDashboard'));renderDashboard();}catch(e){toast(e.message,true);}}else renderCurrent();}
+async function refreshCurrent(){if(state.detail)return openDetail(state.detail.entity,state.detail.record[primaryKey(state.detail.entity)],true);if(state.page==='dashboard'){try{state.bootstrap.dashboard=unwrap(await callServer('getDashboard',{force:true}));persistWarmClientCache();renderDashboard();}catch(e){toast(e.message,true);}}else loadEntity(undefined,true);}
 
 function renderDashboard(){
   setHeader('Tổng quan điều hành','Tình hình kinh doanh, dự án, công việc và dòng tiền theo thời gian thực',false);var d=state.bootstrap.dashboard,m=d.metrics||{};
@@ -225,12 +232,17 @@ function metric(label,value,note,klass){return '<div class="metric-card '+(klass
 function listProjects(rows){if(!rows.length)return '<div class="empty-state" style="min-height:150px">Chưa có đám sắp tới</div>';return rows.map(function(r){return '<div class="list-row"><div><strong>'+esc(r.project_name)+'</strong><span>'+esc(r.venue_name||r.venue_address||'Chưa có địa điểm')+'</span></div><div class="date-badge">'+shortDate(r.event_date)+'</div></div>';}).join('');}
 function listTasks(rows){if(!rows.length)return '<div class="empty-state" style="min-height:150px">Không có việc quá hạn</div>';return rows.map(function(r){return '<div class="list-row"><div><strong>'+esc(r.task_name)+'</strong><span>'+esc(lookupDepartment(r.department_id))+' · '+shortDate(r.deadline_at)+'</span></div><span class="status '+esc(r.priority||'')+'">'+esc(statusLabel('priority',r.priority))+'</span></div>';}).join('');}
 
-async function loadEntity(search){
-  var screen=SCREENS[state.page];if(!screen)return;setLoading();
-  if(typeof search==='string')state.search=search;
-  try{var data=unwrap(await callServer('queryAppData',{entity:state.entity,limit:state.pageSize,offset:state.offset,search:state.search||''}));state.rows=data.rows||[];state.total=Number(data.total||0);if(!state.rows.length&&state.offset>0){state.offset=0;return loadEntity();}renderEntityTable();}
-  catch(err){showInlineError(err);}
+function entityCacheKey(entity,limit,offset,search){return[entity,limit,offset,String(search||'').toLowerCase()].join('|');}
+function fetchEntityPage(entity,limit,offset,search,force){var key=entityCacheKey(entity,limit,offset,search);if(state.entityPromises[key])return state.entityPromises[key];if(!force&&state.entityCache[key]&&Date.now()-state.entityCache[key].at<30000)return Promise.resolve(state.entityCache[key].data);state.entityPromises[key]=callServer('queryAppData',{entity:entity,limit:limit,offset:offset,search:search||''}).then(function(result){var data=unwrap(result);state.entityCache[key]={data:data,at:Date.now()};return data;}).finally(function(){delete state.entityPromises[key];});return state.entityPromises[key];}
+function applyEntityPage(data){state.rows=data.rows||[];state.total=Number(data.total||0);renderEntityTable();}
+async function loadEntity(search,force){
+  var screen=SCREENS[state.page];if(!screen)return;if(typeof search==='string')state.search=search;var entity=state.entity,key=entityCacheKey(entity,state.pageSize,state.offset,state.search),cached=state.entityCache[key];
+  if(cached){applyEntityPage(cached.data);if(!force&&Date.now()-cached.at<30000)return;}else setLoading();
+  try{var data=await fetchEntityPage(entity,state.pageSize,state.offset,state.search,!!force);if(state.entity!==entity)return;if(!data.rows.length&&state.offset>0){state.offset=0;return loadEntity(undefined,force);}applyEntityPage(data);}
+  catch(err){if(!cached)showInlineError(err);else console.warn('[WeddingOps background:entity]',err);}
 }
+function prefetchPage(page){if(!state.bootstrap||page==='dashboard')return Promise.resolve();if(page==='demo'){if(!can('demo_scenarios','view'))return Promise.resolve();return fetchEntityPage('demo_scenarios',100,0,'',false).catch(function(){return null;});}var screen=SCREENS[page];if(!screen)return Promise.resolve();var allowed=(screen.tabs||[[screen.entity,'']]).filter(function(tab){return can(tab[0],'view');}),entity=allowed[0]&&allowed[0][0];if(!entity)return Promise.resolve();return fetchEntityPage(entity,state.pageSize,0,'',false).catch(function(){return null;});}
+function scheduleIdlePrefetch(){if(state.prefetchStarted)return;state.prefetchStarted=true;var pages=['sales','customers','projects','surveys','tasks','finance','resources','admin'],index=0;function next(){if(index>=pages.length)return;var page=pages[index++];prefetchPage(page).finally(function(){setTimeout(next,250);});}setTimeout(next,350);}
 function renderEntityTable(){
   if(state.entity==='invoices')return renderInvoiceListPage();
   if(state.entity==='projects')return renderProjectListPage();
@@ -273,6 +285,7 @@ function renderProjectListPage(){
 function switchEntity(entity){state.entity=entity;state.rows=[];state.offset=0;state.total=0;state.search='';document.getElementById('primaryButton').classList.toggle('hidden',!can(entity,'create'));loadEntity();}
 
 function openForm(entity,record,options){
+  if(!state.referenceReady&&!(options&&options._referenceReady)){var retryOptions=Object.assign({},options||{},{_referenceReady:true});ensureReferenceData(false).then(function(){openForm(entity,record,retryOptions);}).catch(function(error){toast(error.message||String(error),true);});return;}
   record=record||{};options=options||{};state.modal={entity:entity,record:Object.assign({},record,options.preset||{}),lockedFields:options.lockedFields||[],extraData:options.extraData||{},optionOverrides:options.optionOverrides||{},returnDetail:options.returnDetail||null,fields:options.fields||null,intro:options.intro||''};record=state.modal.record;var fields=state.modal.fields||FORM_FIELDS[entity]||schemaFor(entity).filter(function(f){return !isSystemField(f.field_name)&&f.field_name!==primaryKey(entity);}).map(function(f){return f.field_name;});
   text('modalTitle',(record[primaryKey(entity)]?'Cập nhật ':'Thêm ')+(entityLabel(entity)));text('modalSubtitle','Dữ liệu được ghi trực tiếp vào sheet '+entity);
   document.getElementById('modalBody').innerHTML=(state.modal.intro||'')+fields.map(function(field){return renderField(entity,field,record[field]);}).join('');
@@ -308,10 +321,15 @@ async function submitModal(e){
 }
 async function deleteRecord(id){if(!confirm('Xóa mềm bản ghi '+id+'? Dữ liệu có thể được phục hồi từ Sheet.'))return;try{unwrap(await callServer('mutateAppData',{entity:state.entity,action:'delete',id:id}));toast('Đã xóa bản ghi');await refreshBootstrap();await loadEntity();}catch(err){toast(err.message,true);}}
 
-async function openDetail(entity,id){
-  if(!id)return;var previousId=state.detail&&state.detail.record&&state.detail.record[primaryKey(entity)],isNewDetail=!state.detail||state.detail.entity!==entity||String(previousId)!==String(id);if(isNewDetail){state.detailTab='info';if(entity==='customers'&&!state.detailParent)state.customerTab='info';if(entity==='projects')state.projectTab='overview';}setLoading();
-  try{state.detail=unwrap(await callServer('getEntityDetail',{entity:entity,id:id}));document.getElementById('primaryButton').classList.add('hidden');if(entity==='projects')renderProjectWorkspace(state.detail);else if(entity==='leads')renderLeadDetail(state.detail);else if(entity==='customers')renderCustomerHub(state.detail);else if(entity==='invoices')renderInvoiceDetail(state.detail);else if(entity==='surveys')renderSurveyDetail(state.detail);else renderEntityDetail(state.detail);}
-  catch(err){state.detail=null;showInlineError(err);}
+function detailCacheKey(entity,id){return entity+'|'+String(id||'');}
+function fetchEntityDetail(entity,id,force){var key=detailCacheKey(entity,id);if(state.detailPromises[key])return state.detailPromises[key];if(!force&&state.detailCache[key]&&Date.now()-state.detailCache[key].at<30000)return Promise.resolve(state.detailCache[key].data);state.detailPromises[key]=callServer('getEntityDetail',{entity:entity,id:id}).then(function(result){var data=unwrap(result);state.detailCache[key]={data:data,at:Date.now()};return data;}).finally(function(){delete state.detailPromises[key];});return state.detailPromises[key];}
+function renderLoadedDetail(data){state.detail=data;document.getElementById('primaryButton').classList.add('hidden');if(data.entity==='projects')renderProjectWorkspace(data);else if(data.entity==='leads')renderLeadDetail(data);else if(data.entity==='customers')renderCustomerHub(data);else if(data.entity==='invoices')renderInvoiceDetail(data);else if(data.entity==='surveys')renderSurveyDetail(data);else renderEntityDetail(data);}
+function prefetchDetail(entity,id){if(!entity||!id||!can(entity,'view'))return Promise.resolve();return fetchEntityDetail(entity,id,false).catch(function(){return null;});}
+async function openDetail(entity,id,force){
+  if(!id)return;var previousId=state.detail&&state.detail.record&&state.detail.record[primaryKey(entity)],isNewDetail=!state.detail||state.detail.entity!==entity||String(previousId)!==String(id),key=detailCacheKey(entity,id),cached=state.detailCache[key];if(isNewDetail){state.detailTab='info';if(entity==='customers'&&!state.detailParent)state.customerTab='info';if(entity==='projects')state.projectTab='overview';}
+  if(cached){renderLoadedDetail(cached.data);if(!force&&Date.now()-cached.at<30000)return;}else setLoading();
+  try{var data=await fetchEntityDetail(entity,id,!!force);renderLoadedDetail(data);}
+  catch(err){if(!cached){state.detail=null;showInlineError(err);}else console.warn('[WeddingOps background:detail]',err);}
 }
 function openRelatedDetail(entity,id){if(state.detail&&state.detail.entity==='customers'&&entity!=='customers')state.detailParent={entity:'customers',id:state.detail.record.customer_id,tab:state.customerTab};else if(!state.detail)state.detailParent=null;openDetail(entity,id);}
 function closeDetail(){if(state.detailParent){var parent=state.detailParent;state.detailParent=null;state.customerTab=parent.tab||'info';return openDetail(parent.entity,parent.id);}state.detail=null;renderCurrent();}
@@ -518,6 +536,7 @@ function text(id,value){var el=document.getElementById(id);if(el)el.textContent=
 function toast(message,error){var el=document.createElement('div');el.className='toast'+(error?' error':'');el.textContent=message;document.getElementById('toastHost').appendChild(el);setTimeout(function(){el.remove();},4000);}
 function showInlineError(err){document.getElementById('content').innerHTML='<div class="error-card"><strong>Không thể tải dữ liệu</strong><p>'+esc(err.message||err)+'</p></div>';}
 function showFatal(err){setHeader('Không thể khởi động','Kiểm tra hoặc cấp lại quyền Google cho tài khoản hiện tại',false);document.getElementById('content').innerHTML='<div class="error-card"><strong>Ứng dụng chưa có đủ quyền</strong><p>'+esc(err.message||err)+'</p><div class="auth-actions"><button class="button primary" data-action="open-auth">Kiểm tra & cấp lại quyền</button><button class="button ghost" data-action="auth-retry">Thử khởi động lại</button></div></div>';}
-async function refreshBootstrap(){state.bootstrap=unwrap(await callServer('getAppBootstrap'));applyUser();}
+function invalidateClientData(){state.entityCache={};state.entityPromises={};state.detailCache={};state.detailPromises={};state.prefetchStarted=false;}
+async function refreshBootstrap(){invalidateClientData();warmApplicationData(true);applyUser();return true;}
 })();
 </script>

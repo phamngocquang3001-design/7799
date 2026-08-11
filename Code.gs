@@ -13,9 +13,25 @@ function include(filename) {
 function getAppBootstrap(request) {
   return handleApi_(function () {
     const user = requireSession_(request || {});
-    setupSystem_();
     const dictionaries = getMasterDataMap_();
-    const schema = getDataDictionary_();
+    return {
+      app: { name: APP.NAME, version: APP.VERSION, timezone: APP.TIMEZONE },
+      user: sanitizeUser_(user),
+      permissions: getPermissionMap_(user),
+      dictionaries: dictionaries,
+      schema: {},
+      labels: FIELD_LABELS,
+      lookups: emptyAppLookups_(),
+      demoStages: DEMO_STAGES,
+      dashboard: readDashboardCache_(user) || { metrics: {}, upcoming_projects: [], overdue_tasks: [], active_scenarios: [] },
+      background_loading: true
+    };
+  });
+}
+
+function getAppReferenceData(request) {
+  return handleApi_(function () {
+    const user = requireSession_(request || {});
     const departments = scopedLookup_('departments', user, 200);
     const users = scopedLookup_('users', user, 200);
     const leads = scopedLookup_('leads', user, 300);
@@ -29,20 +45,29 @@ function getAppBootstrap(request) {
     const quotations = scopedLookup_('quotations', user, 300);
     const designLeaders = designLeaderUsers_().map(sanitizeUser_);
     return {
-      app: { name: APP.NAME, version: APP.VERSION, timezone: APP.TIMEZONE },
-      user: sanitizeUser_(user),
-      permissions: getPermissionMap_(user),
-      dictionaries: dictionaries,
-      schema: schema,
-      labels: FIELD_LABELS,
+      schema: getDataDictionary_(),
       lookups: {
         departments: departments, users: users, leads: leads, projects: projects, customers: customers,
         opportunities: opportunities, invoices: invoices, tasks: tasks, projectItems: projectItems,
         projectDepartments: projectDepartments, quotations: quotations, designLeaders: designLeaders
-      },
-      demoStages: DEMO_STAGES,
-      dashboard: buildDashboard_()
+      }
     };
+  });
+}
+
+function emptyAppLookups_() {
+  return {
+    departments: [], users: [], leads: [], projects: [], customers: [], opportunities: [], invoices: [],
+    tasks: [], projectItems: [], projectDepartments: [], quotations: [], designLeaders: []
+  };
+}
+
+function runSystemMaintenance(request) {
+  return handleApi_(function () {
+    requireSession_(request || {});
+    assertPermission_('users', 'update');
+    setupSystem_();
+    return { completed: true, at: serializeValue_(new Date()) };
   });
 }
 
@@ -378,7 +403,7 @@ function mutateAppData(request) {
 }
 
 function getDashboard(request) {
-  return handleApi_(function () { requireSession_(request || {}); return buildDashboard_(); });
+  return handleApi_(function () { requireSession_(request || {}); return buildDashboard_((request || {}).force === true); });
 }
 
 function getEmployeePermissions(request) {
@@ -475,6 +500,8 @@ function handleApi_(fn) {
     return { ok: false, error: { message: error.message || String(error), code: error.code || 'APP_ERROR' } };
   } finally {
     REQUEST_USER_ = null;
+    REQUEST_PERMISSION_MAP_ = {};
+    REQUEST_RECORDS_CACHE_ = {};
   }
 }
 
