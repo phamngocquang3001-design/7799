@@ -237,7 +237,10 @@ function appendRowsBatch_(entity, records) {
   const rows = normalized.map(function (record) { return objectToRow_(headers, record); });
   sheet.getRange(Math.max(sheet.getLastRow() + 1, 2), 1, rows.length, headers.length).setValues(rows);
   clearCaches_(entity);
-  return normalized;
+  // google.script.run cannot serialize Date objects. Return the same
+  // client-safe shape used by normal reads so a successful batch write does
+  // not surface as an empty RPC response in the production workspace.
+  return rows.map(function (row) { return rowToObject_(headers, row); });
 }
 
 function createRowsBatch_(entity, records) {
