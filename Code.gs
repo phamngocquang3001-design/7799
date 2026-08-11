@@ -383,7 +383,7 @@ function getProjectProductionData(request) {
         ? readableRelatedRows_(entity, { project_id: project.project_id }, user).filter(function (row) { return String(row.project_id) === String(project.project_id); })
         : [];
     });
-    return { project_id: project.project_id, tables: tables, loaded_at: new Date() };
+    return { project_id: project.project_id, tables: tables, loaded_at: serializeValue_(new Date()) };
   });
 }
 
