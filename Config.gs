@@ -1,6 +1,6 @@
 const APP = Object.freeze({
   NAME: 'Wedding Operations SPA',
-  VERSION: '2.14.0',
+  VERSION: '2.15.0',
   SPREADSHEET_ID: '1nywmZEtRFXcmeQhuhW8Iho0AQVPyAldZwkfBbTosXCs',
   TIMEZONE: 'Asia/Ho_Chi_Minh',
   CACHE_SECONDS: 300,
@@ -220,9 +220,13 @@ const PRODUCTION_AUDIT_SCHEMA = Object.freeze([
   ['deleted_at','datetime',false,'Thời gian xóa mềm','']
 ]);
 
+const BATCH_IDEMPOTENCY_SCHEMA = Object.freeze([
+  ['batch_request_id','text',false,'Mã yêu cầu lưu hàng loạt để chống ghi trùng khi retry','']
+]);
+
 function productionSchema_(entity) {
   const purpose = 'Bảng nghiệp vụ riêng của phòng Sản xuất, liên kết dự án và hạng mục thi công';
-  return (PRODUCTION_TABLE_SCHEMAS[entity] || []).concat(PRODUCTION_AUDIT_SCHEMA).map(function (field) {
+  return (PRODUCTION_TABLE_SCHEMAS[entity] || []).concat(BATCH_IDEMPOTENCY_SCHEMA, PRODUCTION_AUDIT_SCHEMA).map(function (field) {
     return { sheet_name: entity, purpose: purpose, field_name: field[0], data_type: field[1], required: field[2], description: field[3], foreign_key: field[4] };
   });
 }
@@ -279,7 +283,7 @@ const DEPARTMENT_OPERATION_TABLE_SCHEMAS = Object.freeze({
 
 function departmentOperationSchema_(entity) {
   const purpose = 'Bảng nghiệp vụ riêng theo phòng ban, tự tham chiếu dự án đang mở';
-  return (DEPARTMENT_OPERATION_TABLE_SCHEMAS[entity] || []).concat(PRODUCTION_AUDIT_SCHEMA).map(function (field) {
+  return (DEPARTMENT_OPERATION_TABLE_SCHEMAS[entity] || []).concat(BATCH_IDEMPOTENCY_SCHEMA, PRODUCTION_AUDIT_SCHEMA).map(function (field) {
     return { sheet_name: entity, purpose: purpose, field_name: field[0], data_type: field[1], required: field[2], description: field[3], foreign_key: field[4] };
   });
 }

@@ -369,7 +369,10 @@ function ensureDepartmentOperationSheets_() {
   const spreadsheet = db_();
   let changed = false;
   departmentOperationEntities_().forEach(function (entity) {
-    if (spreadsheet.getSheetByName(entity)) return;
+    if (spreadsheet.getSheetByName(entity)) {
+      ensureSheetColumns_(entity, ['batch_request_id']);
+      return;
+    }
     const sheet = spreadsheet.insertSheet(entity);
     const headers = departmentOperationSchema_(entity).map(function (field) { return field.field_name; });
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
@@ -386,7 +389,10 @@ function ensureProductionSheets_() {
   const spreadsheet = db_();
   let changed = false;
   productionEntities_().forEach(function (entity) {
-    if (spreadsheet.getSheetByName(entity)) return;
+    if (spreadsheet.getSheetByName(entity)) {
+      ensureSheetColumns_(entity, ['batch_request_id']);
+      return;
+    }
     const sheet = spreadsheet.insertSheet(entity);
     const headers = productionSchema_(entity).map(function (field) { return field.field_name; });
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);

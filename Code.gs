@@ -389,6 +389,7 @@ function getProjectProductionData(request) {
 
 function batchCreateProductionRows(request) {
   return handleApi_(function () {
+    const startedAt = Date.now();
     request = request || {};
     const user = requireSession_(request);
     const entity = assertEntity_(request.entity);
@@ -409,9 +410,11 @@ function batchCreateProductionRows(request) {
       Object.keys(input || {}).forEach(function (field) { if (allowed[field]) clean[field] = input[field]; });
       return prepareScopedMutation_(entity, prepareMutation_(entity, clean, user, true), user, true);
     });
-    const saved = createRowsBatch_(entity, prepared);
+    const preparedAt = Date.now();
+    const batch = createRowsBatch_(entity, prepared, request._request_id);
+    const saved = batch.rows;
     CacheService.getScriptCache().remove(dashboardCacheKey_(user));
-    return { entity: entity, project_id: project.project_id, created: saved.length, rows: saved.map(function (row) { return sanitizeRecordForClient_(entity, row); }) };
+    return { entity: entity, project_id: project.project_id, created: saved.length, replayed: batch.replayed, rows: saved.map(function (row) { return sanitizeRecordForClient_(entity, row); }), timing: { prepare_ms: preparedAt - startedAt, write_audit_ms: Date.now() - preparedAt, total_ms: Date.now() - startedAt } };
   });
 }
 
@@ -437,6 +440,7 @@ function getProjectDepartmentOperations(request) {
 
 function batchCreateDepartmentOperationRows(request) {
   return handleApi_(function () {
+    const startedAt = Date.now();
     request = request || {};
     const user = requireSession_(request);
     const entity = assertEntity_(request.entity);
@@ -457,9 +461,11 @@ function batchCreateDepartmentOperationRows(request) {
       Object.keys(input || {}).forEach(function (field) { if (allowed[field]) clean[field] = input[field]; });
       return prepareScopedMutation_(entity, prepareMutation_(entity, clean, user, true), user, true);
     });
-    const saved = createRowsBatch_(entity, prepared);
+    const preparedAt = Date.now();
+    const batch = createRowsBatch_(entity, prepared, request._request_id);
+    const saved = batch.rows;
     CacheService.getScriptCache().remove(dashboardCacheKey_(user));
-    return { entity: entity, project_id: project.project_id, created: saved.length, rows: saved.map(function (row) { return sanitizeRecordForClient_(entity, row); }) };
+    return { entity: entity, project_id: project.project_id, created: saved.length, replayed: batch.replayed, rows: saved.map(function (row) { return sanitizeRecordForClient_(entity, row); }), timing: { prepare_ms: preparedAt - startedAt, write_audit_ms: Date.now() - preparedAt, total_ms: Date.now() - startedAt } };
   });
 }
 

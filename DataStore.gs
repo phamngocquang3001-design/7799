@@ -243,14 +243,21 @@ function appendRowsBatch_(entity, records) {
   return rows.map(function (row) { return rowToObject_(headers, row); });
 }
 
-function createRowsBatch_(entity, records) {
+function createRowsBatch_(entity, records, batchRequestId) {
   entity = assertEntity_(entity);
   records = records || [];
-  if (!records.length) return [];
+  if (!records.length) return { rows: [], replayed: false };
   const config = ENTITY_CONFIG[entity];
+  batchRequestId = String(batchRequestId || '').slice(0, 120);
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    // The retry uses the same request ID. Check only after acquiring the same
+    // write lock so two concurrent attempts cannot both append the batch.
+    if (batchRequestId && headers_(entity).indexOf('batch_request_id') >= 0) {
+      const existing = listRows_(entity, { batch_request_id: batchRequestId }, APP.MAX_LIST_ROWS).rows;
+      if (existing.length) return { rows: existing, replayed: true };
+    }
     records.forEach(function (record) {
       if (record[config.pk]) throw appError_('BATCH_CREATE_ONLY', 'Thêm hàng loạt chỉ nhận các dòng dữ liệu mới');
       validateRecord_(entity, record);
@@ -259,11 +266,12 @@ function createRowsBatch_(entity, records) {
     const prepared = records.map(function (record, index) {
       const row = Object.assign({}, record);
       row[config.pk] = ids[index];
+      if (batchRequestId) row.batch_request_id = batchRequestId;
       return row;
     });
     const saved = appendRowsBatch_(entity, prepared);
     appendAuditBatch_('create', entity, saved, true);
-    return saved;
+    return { rows: saved, replayed: false };
   } finally {
     lock.releaseLock();
   }
